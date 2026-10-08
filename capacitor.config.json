@@ -1,5 +1,8 @@
 {
   "appId": "com.fabrisense.app",
   "appName": "FabriSense",
-  "webDir": "dist"
+  "webDir": "frontend/dist",
+  "server": {
+    "cleartext": true
+  }
 }

@@ -1,6 +1,6 @@
 import React, { useEffect, useRef } from 'react';
 
-export function ParticleCanvas({ particleColor = 'rgba(255, 46, 76, ' }) {
+export function ParticleCanvas({ particleColor = 'rgba(134, 239, 172, ' }) {
   const canvasRef = useRef(null);
 
   useEffect(() => {
@@ -37,11 +37,11 @@ export function ParticleCanvas({ particleColor = 'rgba(255, 46, 76, ' }) {
     const render = () => {
       ctx.clearRect(0, 0, width, height);
 
-      // Draw background ambient dark gradient radial
+      // Draw background ambient dark green radial gradient
       const grad = ctx.createRadialGradient(width / 2, height / 2, 50, width / 2, height / 2, width * 0.7);
-      grad.addColorStop(0, 'rgba(255, 46, 76, 0.08)');
-      grad.addColorStop(0.5, 'rgba(18, 9, 16, 0.4)');
-      grad.addColorStop(1, 'rgba(6, 7, 11, 0.95)');
+      grad.addColorStop(0, 'rgba(134, 239, 172, 0.08)');
+      grad.addColorStop(0.5, 'rgba(5, 16, 12, 0.5)');
+      grad.addColorStop(1, 'rgba(5, 8, 13, 0.98)');
       ctx.fillStyle = grad;
       ctx.fillRect(0, 0, width, height);
 
@@ -58,7 +58,7 @@ export function ParticleCanvas({ particleColor = 'rgba(255, 46, 76, ' }) {
         ctx.arc(p.x, p.y, p.radius, 0, Math.PI * 2);
         ctx.fillStyle = `${particleColor}${p.alpha})`;
         ctx.shadowBlur = 10;
-        ctx.shadowColor = 'rgba(255, 46, 76, 0.8)';
+        ctx.shadowColor = 'rgba(134, 239, 172, 0.7)';
         ctx.fill();
         ctx.shadowBlur = 0;
 

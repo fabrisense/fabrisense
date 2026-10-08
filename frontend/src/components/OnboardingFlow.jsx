@@ -1,5 +1,4 @@
 import React, { useState } from 'react';
-import { Signal, Wifi, Battery } from 'lucide-react';
 import onboarding1 from '../assets/onboarding_1.jpg';
 import onboarding2 from '../assets/onboarding_2.jpg';
 import onboarding3 from '../assets/onboarding_3.jpg';
@@ -48,9 +47,9 @@ export function OnboardingFlow({ onComplete }) {
         display: 'flex',
         flexDirection: 'column',
         alignItems: 'center',
-        justifyContent: 'space-between',
-        backgroundColor: '#eae5d9',
-        color: '#151e2e',
+        justifyContent: 'center',
+        backgroundColor: 'var(--bg-deep)',
+        color: 'var(--text-main)',
         fontFamily: "'Plus Jakarta Sans', system-ui, -apple-system, sans-serif",
         overflowY: 'auto',
         userSelect: 'none',
@@ -65,31 +64,14 @@ export function OnboardingFlow({ onComplete }) {
           minHeight: '100vh',
           display: 'flex',
           flexDirection: 'column',
-          justify: 'space-between',
-          padding: '12px 24px 20px 24px',
+          justifyContent: 'space-between',
+          padding: '20px 24px',
           boxSizing: 'border-box',
+          backgroundColor: 'var(--bg-surface)',
+          border: '1px solid var(--border-subtle)',
+          boxShadow: 'var(--shadow-card)',
         }}
       >
-        {/* Top Status Bar */}
-        <div
-          style={{
-            display: 'flex',
-            justifyContent: 'space-between',
-            alignItems: 'center',
-            fontSize: '0.9rem',
-            fontWeight: '600',
-            color: '#151e2e',
-            paddingTop: '6px',
-            marginBottom: '16px',
-          }}
-        >
-          <span>9:41</span>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-            <Signal size={15} strokeWidth={2.5} />
-            <Wifi size={15} strokeWidth={2.5} />
-            <Battery size={18} strokeWidth={2.2} />
-          </div>
-        </div>
 
         {/* Header Bar: Logo & Skip Button */}
         <div
@@ -105,26 +87,27 @@ export function OnboardingFlow({ onComplete }) {
           <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
             <div
               style={{
-                width: '6px',
-                height: '18px',
-                backgroundColor: '#138865',
+                width: '8px',
+                height: '20px',
+                backgroundColor: 'var(--accent-green)',
                 borderRadius: '3px',
+                boxShadow: '0 0 10px var(--accent-green-glow)',
               }}
             />
-            <span style={{ fontSize: '1.25rem', fontWeight: '800', color: '#151e2e', letterSpacing: '-0.01em' }}>
+            <span style={{ fontSize: '1.3rem', fontWeight: '800', color: 'var(--text-heading)', letterSpacing: '-0.01em' }}>
               FabriSense
             </span>
           </div>
 
-          {/* Skip Button (Top Right of Screen) */}
+          {/* Skip Button */}
           <button
             onClick={handleSkip}
             style={{
               padding: '6px 16px',
               borderRadius: '20px',
-              border: '1.5px solid #151e2e',
-              backgroundColor: 'transparent',
-              color: '#151e2e',
+              border: '1.5px solid var(--accent-green)',
+              backgroundColor: 'var(--accent-green-soft)',
+              color: 'var(--text-green)',
               fontWeight: '700',
               fontSize: '0.82rem',
               cursor: 'pointer',
@@ -132,7 +115,7 @@ export function OnboardingFlow({ onComplete }) {
               alignItems: 'center',
               justifyContent: 'center',
               transition: 'all 0.2s ease',
-              boxShadow: '0 2px 6px rgba(0, 0, 0, 0.05)',
+              boxShadow: 'var(--shadow-green-glow)',
             }}
           >
             Skip
@@ -146,8 +129,9 @@ export function OnboardingFlow({ onComplete }) {
             height: '270px',
             borderRadius: '24px',
             overflow: 'hidden',
-            boxShadow: '0 8px 24px rgba(0, 0, 0, 0.08)',
-            backgroundColor: '#ded8c8',
+            boxShadow: 'var(--shadow-card)',
+            border: '1px solid var(--border-subtle)',
+            backgroundColor: 'var(--bg-input)',
             marginBottom: '24px',
             flexShrink: 0,
           }}
@@ -171,7 +155,7 @@ export function OnboardingFlow({ onComplete }) {
             style={{
               fontSize: '1.75rem',
               fontWeight: '800',
-              color: '#151e2e',
+              color: 'var(--text-heading)',
               lineHeight: 1.2,
               margin: '0 0 12px 0',
               letterSpacing: '-0.02em',
@@ -183,7 +167,7 @@ export function OnboardingFlow({ onComplete }) {
             style={{
               fontSize: '0.95rem',
               fontWeight: '500',
-              color: '#635e52',
+              color: 'var(--text-muted)',
               lineHeight: 1.5,
               margin: 0,
             }}
@@ -201,10 +185,11 @@ export function OnboardingFlow({ onComplete }) {
                 key={idx}
                 onClick={() => setCurrentStep(idx)}
                 style={{
-                  width: idx === currentStep ? '20px' : '8px',
+                  width: idx === currentStep ? '24px' : '8px',
                   height: '8px',
                   borderRadius: '4px',
-                  backgroundColor: idx === currentStep ? '#138865' : '#c8c2b4',
+                  backgroundColor: idx === currentStep ? 'var(--accent-green)' : 'var(--border-subtle)',
+                  boxShadow: idx === currentStep ? '0 0 12px var(--accent-green-glow)' : 'none',
                   transition: 'all 0.3s ease',
                   cursor: 'pointer',
                 }}
@@ -220,29 +205,18 @@ export function OnboardingFlow({ onComplete }) {
               padding: '16px 24px',
               borderRadius: '14px',
               border: 'none',
-              backgroundColor: currentStep === 2 ? '#138865' : '#1c2638',
-              color: '#ffffff',
+              background: 'var(--accent-green-gradient)',
+              color: 'var(--btn-text)',
               fontSize: '1rem',
-              fontWeight: '700',
+              fontWeight: '800',
               cursor: 'pointer',
-              boxShadow: currentStep === 2 ? '0 6px 20px rgba(19, 136, 101, 0.3)' : '0 6px 20px rgba(28, 38, 56, 0.25)',
+              boxShadow: 'var(--shadow-green-glow)',
               transition: 'all 0.25s ease',
             }}
           >
             {currentStep === 2 ? 'Get Started' : 'Next Step'}
           </button>
 
-          {/* iOS Home Indicator Bar */}
-          <div
-            style={{
-              width: '134px',
-              height: '5px',
-              backgroundColor: '#151e2e',
-              borderRadius: '10px',
-              marginTop: '4px',
-              opacity: 0.85,
-            }}
-          />
         </div>
       </div>
     </div>

@@ -172,9 +172,9 @@ export function AuthCard({ onLoginSuccess, onForgotClick, soundEnabled }) {
             type="button"
             style={{
               ...subToggleStyle,
-              color: authMethod === 'password' ? '#ff4d6d' : '#64748b',
-              borderColor: authMethod === 'password' ? 'rgba(255, 46, 76, 0.4)' : 'transparent',
-              background: authMethod === 'password' ? 'rgba(255, 46, 76, 0.1)' : 'transparent',
+              color: authMethod === 'password' ? '#86efac' : '#a7f3d0',
+              borderColor: authMethod === 'password' ? 'rgba(124, 232, 163, 0.4)' : 'transparent',
+              background: authMethod === 'password' ? 'rgba(134, 239, 172, 0.12)' : 'transparent',
             }}
             onClick={() => {
               playClickSound();
@@ -188,9 +188,9 @@ export function AuthCard({ onLoginSuccess, onForgotClick, soundEnabled }) {
             type="button"
             style={{
               ...subToggleStyle,
-              color: authMethod === 'otp' ? '#ff4d6d' : '#64748b',
-              borderColor: authMethod === 'otp' ? 'rgba(255, 46, 76, 0.4)' : 'transparent',
-              background: authMethod === 'otp' ? 'rgba(255, 46, 76, 0.1)' : 'transparent',
+              color: authMethod === 'otp' ? '#86efac' : '#a7f3d0',
+              borderColor: authMethod === 'otp' ? 'rgba(124, 232, 163, 0.4)' : 'transparent',
+              background: authMethod === 'otp' ? 'rgba(134, 239, 172, 0.12)' : 'transparent',
             }}
             onClick={() => {
               playClickSound();
@@ -223,11 +223,11 @@ export function AuthCard({ onLoginSuccess, onForgotClick, soundEnabled }) {
               onClick={() => setRememberMe(!rememberMe)}
               style={{
                 ...checkboxStyle,
-                background: rememberMe ? 'var(--accent-red-gradient)' : 'rgba(22, 27, 39, 0.8)',
-                borderColor: rememberMe ? '#ff2e4c' : 'rgba(255, 255, 255, 0.15)',
+                background: rememberMe ? 'var(--accent-green-gradient)' : 'rgba(13, 22, 31, 0.8)',
+                borderColor: rememberMe ? '#86efac' : 'rgba(124, 232, 163, 0.28)',
               }}
             >
-              {rememberMe && <Check size={12} color="#ffffff" />}
+              {rememberMe && <Check size={12} color="#04120a" />}
             </div>
             <span>Keep me signed in</span>
           </label>
@@ -304,7 +304,7 @@ const rememberStyle = {
   gap: '8px',
   cursor: 'pointer',
   fontSize: '0.8rem',
-  color: '#94a3b8',
+  color: '#86efac',
   userSelect: 'none',
 };
 
@@ -320,8 +320,8 @@ const checkboxStyle = {
 };
 
 const errorMessageStyle = {
-  background: 'rgba(255, 46, 76, 0.12)',
-  border: '1px solid rgba(255, 46, 76, 0.4)',
+  background: 'rgba(255, 51, 75, 0.12)',
+  border: '1px solid rgba(255, 51, 75, 0.4)',
   borderRadius: '8px',
   color: '#ff4d6d',
   fontSize: '0.8rem',

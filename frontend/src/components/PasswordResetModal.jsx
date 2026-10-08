@@ -28,12 +28,12 @@ export function PasswordResetModal({ isOpen, onClose, initialMode = 'email', ini
     <div className="modal-overlay" onClick={handleClose}>
       <div className="modal-content" onClick={(e) => e.stopPropagation()}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px' }}>
-          <h3 style={{ fontSize: '1.25rem', fontWeight: 800, color: '#f3f4f8' }}>
+          <h3 style={{ fontSize: '1.25rem', fontWeight: 800, color: 'var(--text-heading)' }}>
             Account <span className="highlight-text">Recovery</span>
           </h3>
           <button
             onClick={handleClose}
-            style={{ background: 'none', border: 'none', color: '#94a3b8', cursor: 'pointer' }}
+            style={{ background: 'none', border: 'none', color: 'var(--text-dim)', cursor: 'pointer' }}
           >
             <X size={20} />
           </button>
@@ -41,7 +41,7 @@ export function PasswordResetModal({ isOpen, onClose, initialMode = 'email', ini
 
         {!submitted ? (
           <form onSubmit={handleSubmit}>
-            <p style={{ fontSize: '0.85rem', color: '#94a3b8', marginBottom: '18px', lineHeight: 1.5 }}>
+            <p style={{ fontSize: '0.85rem', color: 'var(--text-muted)', marginBottom: '18px', lineHeight: 1.5 }}>
               Choose your recovery method below. We will send a secure password reset link or OTP code.
             </p>
 
@@ -104,22 +104,22 @@ export function PasswordResetModal({ isOpen, onClose, initialMode = 'email', ini
                 width: '56px',
                 height: '56px',
                 borderRadius: '50%',
-                background: 'rgba(255, 46, 76, 0.15)',
-                border: '1px solid #ff2e4c',
+                background: 'var(--icon-box-bg)',
+                border: '1px solid var(--icon-box-border)',
                 display: 'flex',
                 alignItems: 'center',
                 justifyContent: 'center',
                 margin: '0 auto 16px auto',
-                boxShadow: '0 0 25px rgba(255, 46, 76, 0.4)',
+                boxShadow: 'var(--shadow-green-glow)',
               }}
             >
-              <CheckCircle2 size={30} color="#ff2e4c" />
+              <CheckCircle2 size={30} color="var(--accent-green)" />
             </div>
-            <h4 style={{ fontSize: '1.1rem', fontWeight: 700, marginBottom: '8px', color: '#ffffff' }}>
+            <h4 style={{ fontSize: '1.1rem', fontWeight: 700, marginBottom: '8px', color: 'var(--accent-green)' }}>
               Recovery Dispatch Sent!
             </h4>
-            <p style={{ fontSize: '0.85rem', color: '#94a3b8', marginBottom: '20px', lineHeight: 1.5 }}>
-              Instructions have been dispatched to <strong style={{ color: '#ff6b81' }}>{targetVal}</strong>. Please check your inbox or mobile device.
+            <p style={{ fontSize: '0.85rem', color: 'var(--text-muted)', marginBottom: '20px', lineHeight: 1.5 }}>
+              Instructions have been dispatched to <strong style={{ color: 'var(--accent-green)' }}>{targetVal}</strong>. Please check your inbox or mobile device.
             </p>
             <button type="button" className="btn-primary" onClick={handleClose}>
               Back to Sign In

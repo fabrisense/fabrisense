@@ -36,7 +36,7 @@ export function EmailInput({ value, onChange, error, setError }) {
       <div className="input-label">
         <span>Email Address</span>
         {value && isValidEmail(value) && (
-          <span className="label-badge" style={{ color: '#4ade80', display: 'flex', alignItems: 'center', gap: '4px' }}>
+          <span className="label-badge" style={{ color: '#86efac', display: 'flex', alignItems: 'center', gap: '4px' }}>
             <CheckCircle2 size={12} /> Valid Format
           </span>
         )}
@@ -64,7 +64,7 @@ export function EmailInput({ value, onChange, error, setError }) {
 
       {/* Domain Suggestion Quick Chips */}
       <div style={chipsContainerStyle}>
-        <span style={{ fontSize: '0.7rem', color: '#64748b', marginRight: '4px' }}>Quick domain:</span>
+        <span style={{ fontSize: '0.7rem', color: '#507d64', marginRight: '4px' }}>Quick domain:</span>
         {COMMON_DOMAINS.map((domain) => (
           <button
             key={domain}
@@ -89,10 +89,10 @@ const chipsContainerStyle = {
 };
 
 const chipStyle = {
-  background: 'rgba(255, 46, 76, 0.08)',
-  border: '1px solid rgba(255, 46, 76, 0.2)',
+  background: 'rgba(134, 239, 172, 0.08)',
+  border: '1px solid rgba(124, 232, 163, 0.28)',
   borderRadius: '12px',
-  color: '#ff6b81',
+  color: '#86efac',
   fontSize: '0.7rem',
   fontWeight: 600,
   padding: '3px 8px',
