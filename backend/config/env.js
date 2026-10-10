@@ -23,6 +23,20 @@ export const NODE_ENV = process.env.NODE_ENV || 'development';
 // CORS: browser dev origin + optional additional origins (comma-separated)
 export const CLIENT_ORIGIN = process.env.CLIENT_ORIGIN || 'http://localhost:5173';
 
+// JWT Configuration
+export const JWT_SECRET = process.env.JWT_SECRET || 'fabrisense_super_secret_jwt_key_2024_textile_ai_inspection';
+export const JWT_EXPIRES_IN = process.env.JWT_EXPIRES_IN || '7d';
+
+// Database Path
+export const DATABASE_PATH = process.env.DATABASE_PATH || path.resolve(__dirname, '../database/fabrisense.db');
+
+// AI / YOLO Configuration
+export const AI_MODE = process.env.AI_MODE || 'mock'; // 'mock' | 'yolo'
+export const YOLO_API_URL = process.env.YOLO_API_URL || 'http://localhost:8000/predict';
+
+// Uploads Directory
+export const UPLOADS_DIR = process.env.UPLOADS_DIR || path.resolve(__dirname, '../uploads/inspections');
+
 // Email / SMTP — supports both EMAIL_* and SMTP_* variable naming conventions
 export const SMTP = {
   host:   (process.env.EMAIL_HOST   || process.env.SMTP_HOST   || 'smtp.gmail.com').trim(),
@@ -37,3 +51,4 @@ export const SMTP = {
 export function smtpConfigured() {
   return !!(SMTP.user && SMTP.pass);
 }
+

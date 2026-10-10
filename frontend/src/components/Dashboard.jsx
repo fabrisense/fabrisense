@@ -215,6 +215,27 @@ export function Dashboard({ userData = {}, onLogout }) {
     setInspections(updated);
     try { localStorage.setItem('fabrisense_inspections', JSON.stringify(updated)); }
     catch (e) { console.error(e); }
+
+    // Sync to shared backend database (Supabase Cloud PostgreSQL & SQLite dual-sync)
+    try {
+      const cleanGrade = (newRecord.grade || 'B').replace(/GRADE\s*/i, '').trim() || 'B';
+      fetch('/api/inspections/sync', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          id: `INS-${new Date().getFullYear()}-${String(newRecord.id).slice(-4)}`,
+          fabricType: newRecord.title || 'Handloom Blend',
+          fabricName: newRecord.title || 'Handloom Blend',
+          imagePath: capturedImage || '/assets/indigo_denim.jpg',
+          defectCount: typeof newRecord.defects === 'number' ? newRecord.defects : 3,
+          grade: cleanGrade,
+          status: cleanGrade === 'A' ? 'Passed' : cleanGrade === 'B' ? 'Review' : 'Failed',
+          overallSummary: 'Mobile fabric quality scan completed.',
+          recommendedAction: cleanGrade === 'A' ? 'Batch approved for production.' : 'Flagged for quality review.',
+          inspectorEmail: userData?.email || '',
+        }),
+      }).catch((err) => console.warn('Database sync warning:', err));
+    } catch (_) {}
   };
 
   // ── Camera file picker handler (fallback) ──
@@ -248,6 +269,25 @@ export function Dashboard({ userData = {}, onLogout }) {
     setInspections(updated);
     try { localStorage.setItem('fabrisense_inspections', JSON.stringify(updated)); }
     catch (e) { console.error(e); }
+
+    // Sync to shared backend SQLite database
+    try {
+      const cleanGrade = (newRecord.grade || 'A').replace(/GRADE\s*/i, '').trim() || 'A';
+      fetch('/api/inspections/sync', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          id: `INS-${new Date().getFullYear()}-${String(newRecord.id).slice(-4)}`,
+          fabricType: newRecord.title || 'Silk Sample',
+          fabricName: newRecord.title || 'Silk Sample',
+          defectCount: 0,
+          grade: cleanGrade,
+          status: 'Passed',
+          inspectorEmail: userData?.email || '',
+        }),
+      }).catch((err) => console.warn('SQLite sync warning:', err));
+    } catch (_) {}
+
     setInspectPhase('idle');
     setAnalysisStep(-1);
     setCapturedImage(null);

@@ -25,3 +25,15 @@ dist-ssr
 *.njsproj
 *.sln
 *.sw?
+
+# Database and uploads
+*.db
+*.db.bak
+*.db-journal
+*.db-shm
+*.db-wal
+/database/
+backend/uploads/
+uploads/
+
+

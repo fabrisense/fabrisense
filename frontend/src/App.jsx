@@ -1,79 +1,47 @@
-import React, { useState, useEffect } from 'react';
-import { LoginPage } from './components/LoginPage';
-import { Dashboard } from './components/Dashboard';
-import { OnboardingFlow } from './components/OnboardingFlow';
-import './index.css';
+import React from 'react';
+import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
+import { MobileApp } from './components/MobileApp';
+import { AdminLogin } from './admin/pages/AdminLogin';
+import { AdminProtectedRoute } from './admin/components/AdminProtectedRoute';
+import { AdminDashboard } from './admin/pages/AdminDashboard';
+import { AdminInspections } from './admin/pages/AdminInspections';
+import { AdminInspectionDetail } from './admin/pages/AdminInspectionDetail';
+import { AdminDefects } from './admin/pages/AdminDefects';
+import { AdminQuality } from './admin/pages/AdminQuality';
+import { AdminUsers } from './admin/pages/AdminUsers';
+import { AdminReports } from './admin/pages/AdminReports';
+import { AdminModel } from './admin/pages/AdminModel';
+import { AdminSettings } from './admin/pages/AdminSettings';
+import './admin.css';
 
 export function App() {
-  const [showOnboarding, setShowOnboarding] = useState(() => {
-    try {
-      return localStorage.getItem('fabrisense_onboarding_done') !== 'true';
-    } catch {
-      return false;
-    }
-  });
-
-  const [userSession, setUserSession] = useState(() => {
-    try {
-      const saved = localStorage.getItem('fabrisense_session');
-      return saved ? JSON.parse(saved) : null;
-    } catch {
-      return null;
-    }
-  });
-
-  const handleLoginSuccess = (data) => {
-    const sessionData = data || {
-      name: 'Ananthi Kumar',
-      email: 'inspector@weavesofindia.com',
-    };
-    setUserSession(sessionData);
-    try {
-      localStorage.setItem('fabrisense_session', JSON.stringify(sessionData));
-      localStorage.setItem('fabrisense_onboarding_done', 'true');
-    } catch (e) {
-      console.error(e);
-    }
-  };
-
-  const handleLogout = () => {
-    setUserSession(null);
-    try {
-      localStorage.removeItem('fabrisense_session');
-    } catch (e) {
-      console.error(e);
-    }
-  };
-
-  const handleOnboardingComplete = () => {
-    setShowOnboarding(false);
-    try {
-      localStorage.setItem('fabrisense_onboarding_done', 'true');
-    } catch (e) {
-      console.error(e);
-    }
-  };
-
   return (
-    <div style={{ minHeight: '100vh', backgroundColor: '#0c1017', color: 'var(--text-main)' }}>
-      {/* 1. Onboarding Flow (3 Slides) */}
-      {showOnboarding && !userSession && (
-        <OnboardingFlow onComplete={handleOnboardingComplete} />
-      )}
+    <BrowserRouter>
+      <Routes>
+        {/* ── Admin Portal Public Authentication ── */}
+        <Route path="/admin/login" element={<AdminLogin />} />
 
-      {/* 2. Login Page */}
-      {!showOnboarding && !userSession && (
-        <LoginPage
-          onLoginSuccess={handleLoginSuccess}
-          onBack={() => setShowOnboarding(true)}
-        />
-      )}
+        {/* ── Admin Portal Protected Routes ── */}
+        <Route path="/admin" element={<AdminProtectedRoute />}>
+          <Route index element={<Navigate to="/admin/dashboard" replace />} />
+          <Route path="dashboard" element={<AdminDashboard />} />
+          <Route path="inspections" element={<AdminInspections />} />
+          <Route path="inspections/:id" element={<AdminInspectionDetail />} />
+          <Route path="defects" element={<AdminDefects />} />
+          <Route path="quality" element={<AdminQuality />} />
+          <Route path="users" element={<AdminUsers />} />
+          <Route path="reports" element={<AdminReports />} />
+          <Route path="model" element={<AdminModel />} />
+          <Route path="settings" element={<AdminSettings />} />
+          <Route path="*" element={<Navigate to="/admin/dashboard" replace />} />
+        </Route>
 
-      {/* 3. Inspection Dashboard (Post-Login Screen) */}
-      {userSession && (
-        <Dashboard userData={userSession} onLogout={handleLogout} />
-      )}
-    </div>
+        {/* ── User / Mobile Application (Preserved Intact) ── */}
+        <Route path="/" element={<MobileApp />} />
+        <Route path="/mobile/*" element={<MobileApp />} />
+        <Route path="*" element={<MobileApp />} />
+      </Routes>
+    </BrowserRouter>
   );
 }
 
