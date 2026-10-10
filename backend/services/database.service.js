@@ -457,6 +457,11 @@ export class DatabaseService {
   }
 
   // ───────────────────────────────────────────────────────────────────────────
+  static getDriver() {
+    return this.isCloud() ? 'supabase' : 'sqlite';
+  }
+
+  // ───────────────────────────────────────────────────────────────────────────
   // MOBILE & ADMIN INSPECTION PERSISTENCE (Single Source of Truth)
   // ───────────────────────────────────────────────────────────────────────────
   static async saveInspection({
@@ -470,10 +475,16 @@ export class DatabaseService {
     summary = '',
     recommendedAction = '',
     modelVersion = 'YOLOv8x-Fabric-v4.2.1',
+    inspectorName = 'Ananthi Kumar',
     inspectorEmail = '',
     defects = [],
   }) {
     const now = new Date().toISOString();
+    const cleanGrade = ['A', 'B', 'C'].includes(String(grade).toUpperCase()) ? String(grade).toUpperCase() : 'B';
+    const cleanStatus = ['Passed', 'Review', 'Failed'].includes(status) ? status : (cleanGrade === 'A' ? 'Passed' : cleanGrade === 'B' ? 'Review' : 'Failed');
+
+    let savedToCloud = false;
+    let cloudError = null;
 
     // 1. Try Supabase Cloud
     if (this.isCloud()) {
@@ -496,12 +507,14 @@ export class DatabaseService {
           .upsert({
             inspection_id: inspectionId,
             user_id: userId,
+            inspector_name: inspectorName || 'Ananthi Kumar',
+            inspector_email: inspectorEmail || null,
             fabric_type: fabricType,
             fabric_name: fabricName,
             image_url: imagePath,
             defect_count: defectCount,
-            grade,
-            status,
+            grade: cleanGrade,
+            status: cleanStatus,
             overall_summary: summary,
             recommended_action: recommendedAction,
             model_version: modelVersion,
@@ -510,25 +523,37 @@ export class DatabaseService {
           .select()
           .single();
 
-        if (!inspErr && savedInsp) {
+        if (inspErr) {
+          cloudError = inspErr.message;
+          console.warn('[DatabaseService] Supabase inspection upsert error:', inspErr.message);
+        } else if (savedInsp) {
+          savedToCloud = true;
+
           // Delete old defects for this ID to prevent duplicates
           await supabase.from('defects').delete().eq('inspection_id', inspectionId);
 
           // Insert defects
           if (defects.length > 0) {
-            const defectRows = defects.map(d => ({
-              inspection_id: inspectionId,
-              defect_type: d.defect_type || d.type || 'Other',
-              confidence: d.confidence || d.conf || 85,
-              severity: d.severity || d.sev || 'Low',
-              x: d.x || 0,
-              y: d.y || 0,
-              width: d.width || d.w || 20,
-              height: d.height || d.h || 20,
-              explanation: d.explanation || d.exp || '',
-              recommended_action: d.recommended_action || d.act || '',
-              created_at: now,
-            }));
+            const defectRows = defects.map(d => {
+              let sev = d.severity || d.sev || 'Moderate';
+              if (sev === 'Minor' || sev === 'low' || sev === 'Low') sev = 'Low';
+              else if (sev === 'Critical' || sev === 'High' || sev === 'high') sev = 'Critical';
+              else sev = 'Moderate';
+
+              return {
+                inspection_id: inspectionId,
+                defect_type: d.defect_type || d.type || d.name || 'Other',
+                confidence: Number(String(d.confidence || d.conf || 85).replace('%', '')) || 85,
+                severity: sev,
+                x: Number(d.x || d.box?.left || 0),
+                y: Number(d.y || d.box?.top || 0),
+                width: Number(d.width || d.box?.width || 20),
+                height: Number(d.height || d.box?.height || 20),
+                explanation: d.explanation || d.exp || d.whatIsIt || '',
+                recommended_action: d.recommended_action || d.act || d.recommendedAction || '',
+                created_at: now,
+              };
+            });
             await supabase.from('defects').insert(defectRows);
           }
 
@@ -544,6 +569,7 @@ export class DatabaseService {
           console.log(`[DatabaseService] Inspection ${inspectionId} persisted to Supabase Cloud.`);
         }
       } catch (err) {
+        cloudError = err.message;
         console.warn('[DatabaseService] Supabase save inspection failed, maintaining SQLite sync:', err.message);
       }
     }
@@ -565,7 +591,7 @@ export class DatabaseService {
         ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       `).run(
         inspectionId, userId, fabricType, fabricName, imagePath,
-        now, defectCount, grade, status, summary,
+        now, defectCount, cleanGrade, cleanStatus, summary,
         recommendedAction, modelVersion, now, now
       );
 
@@ -580,12 +606,15 @@ export class DatabaseService {
       for (const d of defects) {
         insertDefect.run(
           inspectionId,
-          d.defect_type || d.type || 'Other',
-          d.confidence || d.conf || 85,
-          d.severity || d.sev || 'Low',
-          d.x || 0, d.y || 0, d.width || d.w || 20, d.height || d.h || 20,
-          d.explanation || d.exp || '',
-          d.recommended_action || d.act || '',
+          d.defect_type || d.type || d.name || 'Other',
+          Number(String(d.confidence || d.conf || 85).replace('%', '')) || 85,
+          d.severity || d.sev || 'Moderate',
+          Number(d.x || d.box?.left || 0),
+          Number(d.y || d.box?.top || 0),
+          Number(d.width || d.box?.width || 20),
+          Number(d.height || d.box?.height || 20),
+          d.explanation || d.exp || d.whatIsIt || '',
+          d.recommended_action || d.act || d.recommendedAction || '',
           now
         );
       }
@@ -604,11 +633,223 @@ export class DatabaseService {
     }
 
     return {
+      success: true,
       inspection_id: inspectionId,
-      grade,
-      status,
+      inspectionId,
+      grade: cleanGrade,
+      status: cleanStatus,
       defect_count: defectCount,
+      driver: savedToCloud ? 'supabase' : 'sqlite',
+      cloudSync: savedToCloud,
+      warning: cloudError,
     };
+  }
+
+  // ───────────────────────────────────────────────────────────────────────────
+  // DEFECTS
+  // ───────────────────────────────────────────────────────────────────────────
+  static async getDefects({ defectType = '', severity = '', page = 1, limit = 20 } = {}) {
+    const pageNum = Math.max(1, parseInt(page, 10));
+    const limitNum = Math.max(1, Math.min(100, parseInt(limit, 10)));
+    const offset = (pageNum - 1) * limitNum;
+
+    if (this.isCloud()) {
+      const supabase = getSupabaseAdmin();
+      try {
+        let query = supabase.from('defects').select('*, inspections!inner(fabric_type, fabric_name, grade, status, inspection_date)', { count: 'exact' });
+
+        if (defectType && defectType !== 'all') {
+          query = query.eq('defect_type', defectType);
+        }
+        if (severity && severity !== 'all') {
+          query = query.eq('severity', severity);
+        }
+
+        const { data, count, error } = await query
+          .order('created_at', { ascending: false })
+          .range(offset, offset + limitNum - 1);
+
+        if (!error && data) {
+          const records = data.map(d => ({
+            id: d.id,
+            inspection_id: d.inspection_id,
+            defect_type: d.defect_type,
+            confidence: Number(d.confidence),
+            severity: d.severity,
+            x: Number(d.x),
+            y: Number(d.y),
+            width: Number(d.width),
+            height: Number(d.height),
+            explanation: d.explanation,
+            recommended_action: d.recommended_action,
+            created_at: d.created_at,
+            fabric_type: d.inspections?.fabric_type,
+            fabric_name: d.inspections?.fabric_name,
+            grade: d.inspections?.grade,
+            inspection_status: d.inspections?.status,
+            inspection_date: d.inspections?.inspection_date,
+          }));
+
+          return {
+            data: records,
+            pagination: {
+              page: pageNum,
+              limit: limitNum,
+              total: count || 0,
+              totalPages: Math.ceil((count || 0) / limitNum) || 1,
+            },
+            driver: 'supabase',
+          };
+        }
+      } catch (err) {
+        console.warn('[DatabaseService] Supabase getDefects fallback:', err.message);
+      }
+    }
+
+    // SQLite Fallback
+    const conditions = ['1=1'];
+    const params = [];
+    if (defectType && defectType !== 'all') {
+      conditions.push('d.defect_type = ?');
+      params.push(defectType);
+    }
+    if (severity && severity !== 'all') {
+      conditions.push('d.severity = ?');
+      params.push(severity);
+    }
+    const whereClause = conditions.join(' AND ');
+    const countSql = `SELECT COUNT(*) as total FROM defects d WHERE ${whereClause}`;
+    const total = sqliteDb.prepare(countSql).get(...params).total;
+
+    const listSql = `
+      SELECT
+        d.*,
+        i.fabric_type,
+        i.fabric_name,
+        i.grade,
+        i.status as inspection_status,
+        i.inspection_date
+      FROM defects d
+      JOIN inspections i ON d.inspection_id = i.inspection_id
+      WHERE ${whereClause}
+      ORDER BY d.created_at DESC, d.id DESC
+      LIMIT ? OFFSET ?
+    `;
+    const records = sqliteDb.prepare(listSql).all(...params, limitNum, offset);
+
+    return {
+      data: records,
+      pagination: {
+        page: pageNum,
+        limit: limitNum,
+        total,
+        totalPages: Math.ceil(total / limitNum) || 1,
+      },
+      driver: 'sqlite',
+    };
+  }
+
+  // ───────────────────────────────────────────────────────────────────────────
+  // REPORTS
+  // ───────────────────────────────────────────────────────────────────────────
+  static async getReports(filters = {}) {
+    const { search = '', dateFrom = '', dateTo = '', fabricType = '', grade = '', inspector = '', user = '' } = filters;
+
+    if (this.isCloud()) {
+      const supabase = getSupabaseAdmin();
+      try {
+        let query = supabase.from('reports').select('*, inspections!inner(*)', { count: 'exact' });
+        if (search.trim()) {
+          query = query.or(`report_number.ilike.%${search.trim()}%,inspection_id.ilike.%${search.trim()}%`);
+        }
+        if (grade && grade !== 'all') {
+          query = query.eq('inspections.grade', grade.toUpperCase());
+        }
+        const { data, error } = await query.order('created_at', { ascending: false });
+        if (!error && data) {
+          const mapped = data.map(r => ({
+            report_id: r.id,
+            report_number: r.report_number,
+            report_path: r.report_path,
+            report_status: r.status,
+            generated_at: r.created_at,
+            inspection_pk: r.inspections?.id,
+            inspection_id: r.inspection_id,
+            fabric_type: r.inspections?.fabric_type,
+            fabric_name: r.inspections?.fabric_name,
+            image_path: r.inspections?.image_url,
+            inspection_date: r.inspections?.inspection_date,
+            defect_count: r.inspections?.defect_count,
+            grade: r.inspections?.grade,
+            status: r.inspections?.status,
+            inspector_name: r.inspections?.inspector_name || 'Rajesh Kumar',
+            inspector_email: r.inspections?.inspector_email || '',
+          }));
+          return { data: mapped, driver: 'supabase' };
+        }
+      } catch (err) {
+        console.warn('[DatabaseService] Supabase getReports fallback:', err.message);
+      }
+    }
+
+    // SQLite Fallback
+    const conditions = ['1=1'];
+    const params = [];
+
+    if (search.trim()) {
+      conditions.push('(r.report_number LIKE ? OR i.inspection_id LIKE ?)');
+      const term = `%${search.trim()}%`;
+      params.push(term, term);
+    }
+    if (fabricType && fabricType !== 'all') {
+      conditions.push('i.fabric_type = ?');
+      params.push(fabricType);
+    }
+    if (grade && grade !== 'all') {
+      conditions.push('i.grade = ?');
+      params.push(grade.toUpperCase());
+    }
+    const targetUser = inspector || user;
+    if (targetUser && targetUser !== 'all') {
+      conditions.push('(u.name LIKE ? OR u.email LIKE ?)');
+      params.push(`%${targetUser}%`, `%${targetUser}%`);
+    }
+    if (dateFrom) {
+      conditions.push('i.inspection_date >= ?');
+      params.push(dateFrom);
+    }
+    if (dateTo) {
+      conditions.push('i.inspection_date <= ?');
+      params.push(`${dateTo} 23:59:59`);
+    }
+
+    const whereClause = conditions.join(' AND ');
+    const sql = `
+      SELECT
+        r.id as report_id,
+        r.report_number,
+        r.report_path,
+        COALESCE(r.status, 'Generated') as report_status,
+        r.created_at as generated_at,
+        i.id as inspection_pk,
+        i.inspection_id,
+        i.fabric_type,
+        i.fabric_name,
+        i.image_path,
+        i.inspection_date,
+        i.defect_count,
+        i.grade,
+        i.status,
+        COALESCE(u.name, 'Rajesh Kumar') as inspector_name,
+        u.email as inspector_email
+      FROM reports r
+      JOIN inspections i ON r.inspection_id = i.inspection_id
+      LEFT JOIN users u ON i.user_id = u.id
+      WHERE ${whereClause}
+      ORDER BY r.created_at DESC, r.id DESC
+    `;
+    const reports = sqliteDb.prepare(sql).all(...params);
+    return { data: reports, driver: 'sqlite' };
   }
 
   // ───────────────────────────────────────────────────────────────────────────

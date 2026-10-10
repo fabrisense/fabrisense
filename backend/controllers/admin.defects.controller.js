@@ -1,61 +1,20 @@
 import db from '../database/db.js';
+import DatabaseService from '../services/database.service.js';
 
 /**
  * GET /api/admin/defects
  * Get list of all defects with optional filtering
  */
-export function getDefects(req, res) {
+export async function getDefects(req, res) {
   try {
     const { defectType = '', severity = '', page = 1, limit = 20 } = req.query;
-
-    const pageNum = Math.max(1, parseInt(page, 10));
-    const limitNum = Math.max(1, Math.min(100, parseInt(limit, 10)));
-    const offset = (pageNum - 1) * limitNum;
-
-    const conditions = ['1=1'];
-    const params = [];
-
-    if (defectType && defectType !== 'all') {
-      conditions.push('d.defect_type = ?');
-      params.push(defectType);
-    }
-
-    if (severity && severity !== 'all') {
-      conditions.push('d.severity = ?');
-      params.push(severity);
-    }
-
-    const whereClause = conditions.join(' AND ');
-
-    const countSql = `SELECT COUNT(*) as total FROM defects d WHERE ${whereClause}`;
-    const total = db.prepare(countSql).get(...params).total;
-
-    const listSql = `
-      SELECT 
-        d.*,
-        i.fabric_type,
-        i.fabric_name,
-        i.grade,
-        i.status as inspection_status,
-        i.inspection_date
-      FROM defects d
-      JOIN inspections i ON d.inspection_id = i.inspection_id
-      WHERE ${whereClause}
-      ORDER BY d.created_at DESC, d.id DESC
-      LIMIT ? OFFSET ?
-    `;
-
-    const records = db.prepare(listSql).all(...params, limitNum, offset);
+    const result = await DatabaseService.getDefects({ defectType, severity, page, limit });
 
     return res.json({
       success: true,
-      data: records,
-      pagination: {
-        page: pageNum,
-        limit: limitNum,
-        total,
-        totalPages: Math.ceil(total / limitNum) || 1,
-      },
+      data: result.data,
+      pagination: result.pagination,
+      driver: result.driver,
     });
   } catch (error) {
     console.error('[Get Defects Error]', error);

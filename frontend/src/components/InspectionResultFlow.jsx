@@ -270,6 +270,7 @@ export function InspectionResultFlow({
         time: 'Today • 3 defects found',
         grade: DEFECT_DATA.grade,
         defects: DEFECT_DATA.totalDefects,
+        defectsList: DEFECT_DATA.defects,
         type: 'silk',
       });
     }
