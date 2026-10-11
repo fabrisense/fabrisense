@@ -164,6 +164,38 @@ export function Dashboard({ userData = {}, onLogout }) {
     showToast(`Language set to ${lang}`);
   };
 
+  // Fetch latest shared inspections from backend on mount so refresh/reload never loses saved records
+  useEffect(() => {
+    let isMounted = true;
+    const fetchSharedInspections = async () => {
+      try {
+        const apiBase = (import.meta.env.VITE_API_BASE_URL || '').replace(/\/$/, '');
+        const res = await fetch(`${apiBase}/api/inspections`);
+        if (!res.ok) return;
+        const result = await res.json();
+        if (result.success && Array.isArray(result.data) && isMounted) {
+          if (result.data.length > 0) {
+            const mapped = result.data.map((item) => ({
+              id: item.inspection_id || item.id,
+              title: item.fabric_name || item.fabric_type || 'Fabric Roll',
+              time: item.inspection_date ? new Date(item.inspection_date).toLocaleDateString() : 'Recent scan',
+              grade: `GRADE ${item.grade || 'B'}`,
+              defects: item.defect_count ?? 0,
+              type: (item.fabric_type || '').toLowerCase().includes('denim') ? 'denim' : 'silk',
+              raw: item,
+            }));
+            setInspections(mapped);
+            try { localStorage.setItem('fabrisense_inspections', JSON.stringify(mapped)); } catch (_) {}
+          }
+        }
+      } catch (err) {
+        console.warn('Failed to fetch shared inspections:', err);
+      }
+    };
+    fetchSharedInspections();
+    return () => { isMounted = false; };
+  }, []);
+
   // ── Live Camera Management ──
   const stopLiveCamera = () => {
     if (streamRef.current) {
@@ -316,9 +348,10 @@ export function Dashboard({ userData = {}, onLogout }) {
   }, [inspectPhase, analysisStep]);
 
   // ── Save report directly from the 4-page flow ──
-  const handleSaveBatchFromFlow = (record) => {
+  const handleSaveBatchFromFlow = async (record) => {
+    const assignedId = `INS-${new Date().getFullYear()}-${String(record?.id || Date.now()).slice(-4)}`;
     const newRecord = {
-      id: record?.id || Date.now(),
+      id: assignedId,
       title: record?.title || 'Handloom Cotton-Silk Blend',
       time: record?.time || 'Today • 3 defects found',
       grade: record?.grade || 'GRADE B',
@@ -329,6 +362,36 @@ export function Dashboard({ userData = {}, onLogout }) {
     setInspections(updated);
     try { localStorage.setItem('fabrisense_inspections', JSON.stringify(updated)); }
     catch (e) { console.error(e); }
+
+    // Sync to shared backend database (Supabase Cloud PostgreSQL & SQLite dual-sync)
+    try {
+      const cleanGrade = (newRecord.grade || 'B').replace(/GRADE\s*/i, '').trim() || 'B';
+      const apiBase = (import.meta.env.VITE_API_BASE_URL || '').replace(/\/$/, '');
+      const response = await fetch(`${apiBase}/api/inspections/sync`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          id: assignedId,
+          fabricType: newRecord.title || 'Handloom Blend',
+          fabricName: newRecord.title || 'Handloom Blend',
+          imagePath: capturedImage || '/assets/indigo_denim.jpg',
+          defectCount: typeof newRecord.defects === 'number' ? newRecord.defects : 3,
+          grade: cleanGrade,
+          status: cleanGrade === 'A' ? 'Passed' : cleanGrade === 'B' ? 'Review' : 'Failed',
+          overallSummary: 'Mobile fabric quality scan completed.',
+          recommendedAction: cleanGrade === 'A' ? 'Batch approved for production.' : 'Flagged for quality review.',
+          inspectorName: userData?.name || 'Ananthi Kumar',
+          inspectorEmail: userData?.email || 'inspector@weavesofindia.com',
+          defects: record?.defectsList || [],
+        }),
+      });
+      const data = await response.json();
+      if (data.success && data.inspectionId) {
+        newRecord.id = data.inspectionId;
+      }
+    } catch (err) {
+      console.warn('Database sync warning:', err);
+    }
   };
 
   // ── Camera file picker handler (fallback) ──
@@ -348,20 +411,48 @@ export function Dashboard({ userData = {}, onLogout }) {
   };
 
   // ── Save result to history ──
-  const handleSaveBatch = () => {
+  const handleSaveBatch = async () => {
     if (!scanResult) return;
+    const assignedId = `INS-${new Date().getFullYear()}-${String(Date.now()).slice(-4)}`;
     const newRecord = {
-      id: Date.now(),
-      title: scanResult.fabric,
+      id: assignedId,
+      title: scanResult.fabric || 'Pure Silk Weave',
       time: 'Today • No defects',
-      grade: scanResult.grade,
-      defects: scanResult.defects,
+      grade: scanResult.grade || 'GRADE A',
+      defects: scanResult.defects || 0,
       type: 'silk',
     };
     const updated = [newRecord, ...inspections];
     setInspections(updated);
     try { localStorage.setItem('fabrisense_inspections', JSON.stringify(updated)); }
     catch (e) { console.error(e); }
+
+    // Sync to shared backend database
+    try {
+      const cleanGrade = (newRecord.grade || 'A').replace(/GRADE\s*/i, '').trim() || 'A';
+      const apiBase = (import.meta.env.VITE_API_BASE_URL || '').replace(/\/$/, '');
+      await fetch(`${apiBase}/api/inspections/sync`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          id: assignedId,
+          fabricType: newRecord.title || 'Silk Sample',
+          fabricName: newRecord.title || 'Silk Sample',
+          imagePath: capturedImage || '/assets/indigo_denim.jpg',
+          defectCount: 0,
+          grade: cleanGrade,
+          status: 'Passed',
+          overallSummary: 'Fabric batch passed zero-defect standard.',
+          recommendedAction: 'Approved for production.',
+          inspectorName: userData?.name || 'Ananthi Kumar',
+          inspectorEmail: userData?.email || 'inspector@weavesofindia.com',
+          defects: [],
+        }),
+      });
+    } catch (err) {
+      console.warn('Database sync warning:', err);
+    }
+
     setInspectPhase('idle');
     setAnalysisStep(-1);
     setCapturedImage(null);

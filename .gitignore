@@ -28,3 +28,13 @@ dist-ssr
 
 # Ignore nested clone
 fabrisense/
+
+# Database and uploads
+*.db
+*.db.bak
+*.db-journal
+*.db-shm
+*.db-wal
+/database/
+backend/uploads/
+uploads/
