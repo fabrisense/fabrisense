@@ -1,8 +1,10 @@
-﻿import React, { useState, useEffect } from "react";
+import React, { useState, useEffect } from "react";
 import {
   LayoutDashboard, ClipboardList, Settings, Search, LogOut, X, Eye,
-  ChevronRight, ShieldCheck, RefreshCw, Info, Cpu
+  ChevronRight, ShieldCheck, RefreshCw, Info, Cpu, Edit3, Check,
+  User, Mail, Phone, Building, CheckCircle2, AlertCircle
 } from "lucide-react";
+import logoImg from "../assets/logo.jpg";
 
 const INSPECTIONS_KEY = "fabrisense_inspections";
 
@@ -92,13 +94,101 @@ function EmptyState({ title, subtitle }) {
   );
 }
 
-export function AdminDashboard({ userData = {}, onLogout }) {
+export function AdminDashboard({ userData = {}, onLogout, onUpdateUserData }) {
   const [nav, setNav] = useState("dashboard");
   const [search, setSearch] = useState("");
   const [inspections, setInspections] = useState([]);
   const [selected, setSelected] = useState(null);
   const [gradeF, setGradeF] = useState("All");
   const [statusF, setStatusF] = useState("All");
+
+  const [adminProfile, setAdminProfile] = useState(() => {
+    let saved = null;
+    try {
+      saved = JSON.parse(localStorage.getItem("fabrisense_admin_profile")) ||
+              JSON.parse(localStorage.getItem("fabrisense_admin_user"));
+    } catch {}
+    return {
+      name: saved?.name || userData?.name || "Rajesh Kumar",
+      email: saved?.email || userData?.email || "admin@fabrisense.com",
+      phone: saved?.phone || userData?.phone || "+91 98765 43210",
+      role: saved?.role || userData?.role || "Administrator",
+      department: saved?.department || "Operations & Quality Control",
+      facility: saved?.facility || "Unit #4 (Salem Facility)",
+    };
+  });
+
+  const [isEditingAccount, setIsEditingAccount] = useState(false);
+  const [accountForm, setAccountForm] = useState({
+    name: adminProfile.name,
+    email: adminProfile.email,
+    phone: adminProfile.phone,
+    department: adminProfile.department,
+    facility: adminProfile.facility,
+  });
+  const [accountSaveSuccess, setAccountSaveSuccess] = useState(false);
+  const [accountError, setAccountError] = useState("");
+
+  useEffect(() => {
+    if (userData?.name || userData?.email) {
+      setAdminProfile(prev => ({
+        ...prev,
+        name: userData.name || prev.name,
+        email: userData.email || prev.email,
+      }));
+    }
+  }, [userData]);
+
+  const handleOpenEditAccount = () => {
+    setAccountForm({
+      name: adminProfile.name,
+      email: adminProfile.email,
+      phone: adminProfile.phone,
+      department: adminProfile.department,
+      facility: adminProfile.facility,
+    });
+    setAccountError("");
+    setIsEditingAccount(true);
+  };
+
+  const handleSaveAccount = (e) => {
+    e?.preventDefault();
+    setAccountError("");
+    if (!accountForm.name.trim()) {
+      setAccountError("Please enter your full name.");
+      return;
+    }
+    if (!accountForm.email.trim() || !accountForm.email.includes("@")) {
+      setAccountError("Please enter a valid email address.");
+      return;
+    }
+
+    const updated = {
+      ...adminProfile,
+      name: accountForm.name.trim(),
+      email: accountForm.email.trim(),
+      phone: accountForm.phone.trim(),
+      department: accountForm.department.trim(),
+      facility: accountForm.facility.trim(),
+    };
+
+    setAdminProfile(updated);
+    try {
+      localStorage.setItem("fabrisense_admin_profile", JSON.stringify(updated));
+      const existing = JSON.parse(localStorage.getItem("fabrisense_admin_user") || "{}");
+      localStorage.setItem("fabrisense_admin_user", JSON.stringify({ ...existing, ...updated }));
+    } catch (err) {
+      console.error("Failed to save admin profile", err);
+    }
+
+    if (onUpdateUserData) {
+      onUpdateUserData(updated);
+    }
+
+    setIsEditingAccount(false);
+    setAccountSaveSuccess(true);
+    setTimeout(() => setAccountSaveSuccess(false), 3500);
+  };
 
   useEffect(() => { setInspections(loadInspections()); }, []);
 
@@ -162,14 +252,14 @@ export function AdminDashboard({ userData = {}, onLogout }) {
         display: "flex", alignItems: "center", justifyContent: "space-between",
         flexShrink: 0, boxShadow: "0 1px 4px rgba(0,0,0,0.06)",
       }}>
-        <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+        <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
           <div style={{
-            width: "30px", height: "30px", borderRadius: "8px",
-            background: "linear-gradient(135deg, #2563eb, #1d4ed8)",
-            display: "flex", alignItems: "center", justifyContent: "center",
-            boxShadow: "0 2px 6px rgba(37,99,235,0.3)",
+            width: "32px", height: "32px", borderRadius: "8px",
+            overflow: "hidden",
+            boxShadow: "0 2px 8px rgba(0,0,0,0.3)",
+            flexShrink: 0,
           }}>
-            <ShieldCheck size={16} color="#fff" />
+            <img src={logoImg} alt="FabriSense" style={{ width: "100%", height: "100%", objectFit: "cover" }} draggable={false} />
           </div>
           <div>
             <div style={{ fontSize: "0.95rem", fontWeight: "800", color: th.text, letterSpacing: "-0.01em" }}>FabriSense</div>
@@ -205,7 +295,7 @@ export function AdminDashboard({ userData = {}, onLogout }) {
           <div style={{ width: "6px", height: "6px", borderRadius: "50%", backgroundColor: "#22c55e" }} />
           <span>System Online</span>
         </div>
-        <span>Admin: <strong style={{ color: th.text }}>{userData?.name || "Admin"}</strong></span>
+        <span>Admin: <strong style={{ color: th.text }}>{adminProfile.name || userData?.name || "Admin"}</strong></span>
       </div>
 
       {/* NAV TABS */}
@@ -387,27 +477,99 @@ export function AdminDashboard({ userData = {}, onLogout }) {
 
         {/* ── SETTINGS ── */}
         {nav === "settings" && (<>
-          <div>
-            <h2 style={{ fontSize: "1.05rem", fontWeight: "800", margin: "0 0 2px", color: th.text }}>Settings</h2>
-            <p style={{ fontSize: "0.72rem", color: th.muted, margin: 0 }}>Account and data preferences</p>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-end", marginBottom: "4px" }}>
+            <div>
+              <h2 style={{ fontSize: "1.05rem", fontWeight: "800", margin: "0 0 2px", color: th.text }}>Settings</h2>
+              <p style={{ fontSize: "0.72rem", color: th.muted, margin: 0 }}>Account and data preferences</p>
+            </div>
+            <button
+              onClick={handleOpenEditAccount}
+              style={{
+                display: "flex",
+                alignItems: "center",
+                gap: "5px",
+                padding: "6px 12px",
+                borderRadius: "8px",
+                backgroundColor: th.aLight,
+                border: `1px solid ${th.aBorder}`,
+                color: th.accent,
+                fontSize: "0.74rem",
+                fontWeight: "700",
+                cursor: "pointer",
+                fontFamily: "inherit",
+              }}
+            >
+              <Edit3 size={13} />
+              <span>Edit Account</span>
+            </button>
           </div>
 
+          {accountSaveSuccess && (
+            <div style={{
+              display: "flex", alignItems: "center", gap: "8px",
+              padding: "10px 14px", borderRadius: "10px",
+              backgroundColor: th.gLight, border: `1px solid #bbf7d0`,
+              color: th.green, fontSize: "0.78rem", fontWeight: "600",
+            }}>
+              <CheckCircle2 size={16} color={th.green} />
+              <span>Account settings updated successfully!</span>
+            </div>
+          )}
+
           <div style={card}>
-            <h3 style={{ fontSize: "0.82rem", fontWeight: "800", margin: "0 0 12px", color: th.text }}>Account</h3>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "14px" }}>
+              <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
+                <div style={{
+                  width: "38px", height: "38px", borderRadius: "50%",
+                  backgroundColor: th.aLight, border: `1px solid ${th.aBorder}`,
+                  color: th.accent, display: "flex", alignItems: "center", justifyContent: "center",
+                  fontSize: "0.85rem", fontWeight: "800",
+                }}>
+                  {adminProfile.name ? adminProfile.name.split(" ").map(w => w[0]).join("").slice(0, 2).toUpperCase() : "AD"}
+                </div>
+                <div>
+                  <div style={{ fontSize: "0.88rem", fontWeight: "800", color: th.text }}>{adminProfile.name}</div>
+                  <div style={{ fontSize: "0.7rem", color: th.muted }}>{adminProfile.email}</div>
+                </div>
+              </div>
+              <span style={{
+                fontSize: "0.62rem", fontWeight: "700", padding: "3px 8px", borderRadius: "6px",
+                backgroundColor: th.aLight, color: th.accent, border: `1px solid ${th.aBorder}`,
+              }}>Administrator</span>
+            </div>
+
             {[
-              { label: "Name", value: userData?.name || "Admin" },
-              { label: "Email", value: userData?.email || "admin@fabrisense.com" },
-              { label: "Role", value: "Administrator" },
+              { label: "Full Name", value: adminProfile.name },
+              { label: "Email Address", value: adminProfile.email },
+              { label: "Phone Number", value: adminProfile.phone },
+              { label: "Department", value: adminProfile.department },
+              { label: "Plant / Facility", value: adminProfile.facility },
+              { label: "Access Role", value: adminProfile.role },
             ].map(({ label, value }) => (
               <div key={label} style={{
                 display: "flex", justifyContent: "space-between", alignItems: "center",
-                paddingBottom: "10px", marginBottom: "10px", borderBottom: `1px solid ${th.border}`,
-                fontSize: "0.78rem",
+                paddingBottom: "9px", marginBottom: "9px", borderBottom: `1px solid ${th.border}`,
+                fontSize: "0.76rem",
               }}>
                 <span style={{ color: th.muted, fontWeight: "600" }}>{label}</span>
                 <span style={{ color: th.text, fontWeight: "700" }}>{value}</span>
               </div>
             ))}
+
+            <button
+              onClick={handleOpenEditAccount}
+              style={{
+                width: "100%", marginTop: "6px", padding: "9px",
+                borderRadius: "8px", backgroundColor: th.bg,
+                border: `1px solid ${th.border}`, color: th.accent,
+                fontWeight: "700", fontSize: "0.76rem", cursor: "pointer",
+                display: "flex", alignItems: "center", justifyContent: "center", gap: "6px",
+                fontFamily: "inherit",
+              }}
+            >
+              <Edit3 size={14} />
+              <span>Edit Account Settings</span>
+            </button>
           </div>
 
           <div style={card}>
@@ -475,7 +637,7 @@ export function AdminDashboard({ userData = {}, onLogout }) {
                 { label: "Grade", value: selected.grade || "B" },
                 { label: "Defects", value: selected.defects ?? 0 },
                 { label: "Status", value: selected.status || displayStatus(selected) },
-                { label: "Inspector", value: selected.inspector || userData?.name || "—" },
+                { label: "Inspector", value: selected.inspector || adminProfile.name || userData?.name || "—" },
               ].map(({ label, value }) => (
                 <div key={label} style={{
                   padding: "10px", borderRadius: "10px",
@@ -493,6 +655,202 @@ export function AdminDashboard({ userData = {}, onLogout }) {
               color: th.text, fontWeight: "700", fontSize: "0.82rem", cursor: "pointer",
               fontFamily: "'Plus Jakarta Sans', system-ui, sans-serif",
             }}>Close</button>
+          </div>
+        </div>
+      )}
+
+      {/* ── EDIT ACCOUNT SETTINGS MODAL ── */}
+      {isEditingAccount && (
+        <div style={{
+          position: "absolute", inset: 0, zIndex: 110,
+          backgroundColor: "rgba(15,23,42,0.5)", backdropFilter: "blur(4px)",
+          display: "flex", alignItems: "center", justifyContent: "center",
+          padding: "16px",
+        }}>
+          <div style={{
+            width: "100%", maxWidth: "360px", backgroundColor: th.surface,
+            borderRadius: "16px", border: `1px solid ${th.border}`,
+            padding: "20px 18px", display: "flex", flexDirection: "column", gap: "14px",
+            boxShadow: "0 12px 36px rgba(0,0,0,0.2)",
+            maxHeight: "90%", overflowY: "auto",
+          }}>
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+              <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+                <div style={{
+                  width: "28px", height: "28px", borderRadius: "8px",
+                  backgroundColor: th.aLight, border: `1px solid ${th.aBorder}`,
+                  display: "flex", alignItems: "center", justifyContent: "center",
+                }}>
+                  <Edit3 size={15} color={th.accent} />
+                </div>
+                <h3 style={{ fontSize: "0.95rem", fontWeight: "800", color: th.text, margin: 0 }}>
+                  Edit Account Settings
+                </h3>
+              </div>
+              <button
+                onClick={() => setIsEditingAccount(false)}
+                style={{ background: "none", border: "none", cursor: "pointer", padding: 0 }}
+              >
+                <X size={18} color={th.muted} />
+              </button>
+            </div>
+
+            {accountError && (
+              <div style={{
+                display: "flex", alignItems: "center", gap: "6px",
+                padding: "8px 12px", borderRadius: "8px",
+                backgroundColor: th.rLight, border: "1px solid #fecaca",
+                color: th.red, fontSize: "0.74rem", fontWeight: "600",
+              }}>
+                <AlertCircle size={14} color={th.red} />
+                <span>{accountError}</span>
+              </div>
+            )}
+
+            <form onSubmit={handleSaveAccount} style={{ display: "flex", flexDirection: "column", gap: "11px" }}>
+              <div>
+                <label style={{ display: "block", fontSize: "0.7rem", fontWeight: "700", color: th.muted, marginBottom: "4px" }}>
+                  Full Name
+                </label>
+                <div style={{
+                  display: "flex", alignItems: "center", gap: "8px",
+                  padding: "8px 10px", borderRadius: "8px",
+                  border: `1px solid ${th.border}`, backgroundColor: th.bg,
+                }}>
+                  <User size={14} color={th.muted} />
+                  <input
+                    type="text"
+                    value={accountForm.name}
+                    onChange={(e) => setAccountForm(prev => ({ ...prev, name: e.target.value }))}
+                    placeholder="Administrator Name"
+                    style={{
+                      border: "none", background: "transparent", outline: "none",
+                      width: "100%", fontSize: "0.78rem", color: th.text, fontFamily: "inherit",
+                    }}
+                  />
+                </div>
+              </div>
+
+              <div>
+                <label style={{ display: "block", fontSize: "0.7rem", fontWeight: "700", color: th.muted, marginBottom: "4px" }}>
+                  Email Address
+                </label>
+                <div style={{
+                  display: "flex", alignItems: "center", gap: "8px",
+                  padding: "8px 10px", borderRadius: "8px",
+                  border: `1px solid ${th.border}`, backgroundColor: th.bg,
+                }}>
+                  <Mail size={14} color={th.muted} />
+                  <input
+                    type="email"
+                    value={accountForm.email}
+                    onChange={(e) => setAccountForm(prev => ({ ...prev, email: e.target.value }))}
+                    placeholder="admin@example.com"
+                    style={{
+                      border: "none", background: "transparent", outline: "none",
+                      width: "100%", fontSize: "0.78rem", color: th.text, fontFamily: "inherit",
+                    }}
+                  />
+                </div>
+              </div>
+
+              <div>
+                <label style={{ display: "block", fontSize: "0.7rem", fontWeight: "700", color: th.muted, marginBottom: "4px" }}>
+                  Phone Number
+                </label>
+                <div style={{
+                  display: "flex", alignItems: "center", gap: "8px",
+                  padding: "8px 10px", borderRadius: "8px",
+                  border: `1px solid ${th.border}`, backgroundColor: th.bg,
+                }}>
+                  <Phone size={14} color={th.muted} />
+                  <input
+                    type="tel"
+                    value={accountForm.phone}
+                    onChange={(e) => setAccountForm(prev => ({ ...prev, phone: e.target.value }))}
+                    placeholder="+91 98765 43210"
+                    style={{
+                      border: "none", background: "transparent", outline: "none",
+                      width: "100%", fontSize: "0.78rem", color: th.text, fontFamily: "inherit",
+                    }}
+                  />
+                </div>
+              </div>
+
+              <div>
+                <label style={{ display: "block", fontSize: "0.7rem", fontWeight: "700", color: th.muted, marginBottom: "4px" }}>
+                  Department / Division
+                </label>
+                <div style={{
+                  display: "flex", alignItems: "center", gap: "8px",
+                  padding: "8px 10px", borderRadius: "8px",
+                  border: `1px solid ${th.border}`, backgroundColor: th.bg,
+                }}>
+                  <Building size={14} color={th.muted} />
+                  <input
+                    type="text"
+                    value={accountForm.department}
+                    onChange={(e) => setAccountForm(prev => ({ ...prev, department: e.target.value }))}
+                    placeholder="Operations & Quality Assurance"
+                    style={{
+                      border: "none", background: "transparent", outline: "none",
+                      width: "100%", fontSize: "0.78rem", color: th.text, fontFamily: "inherit",
+                    }}
+                  />
+                </div>
+              </div>
+
+              <div>
+                <label style={{ display: "block", fontSize: "0.7rem", fontWeight: "700", color: th.muted, marginBottom: "4px" }}>
+                  Facility / Plant Location
+                </label>
+                <div style={{
+                  display: "flex", alignItems: "center", gap: "8px",
+                  padding: "8px 10px", borderRadius: "8px",
+                  border: `1px solid ${th.border}`, backgroundColor: th.bg,
+                }}>
+                  <Building size={14} color={th.muted} />
+                  <input
+                    type="text"
+                    value={accountForm.facility}
+                    onChange={(e) => setAccountForm(prev => ({ ...prev, facility: e.target.value }))}
+                    placeholder="Salem Plant Mill #4"
+                    style={{
+                      border: "none", background: "transparent", outline: "none",
+                      width: "100%", fontSize: "0.78rem", color: th.text, fontFamily: "inherit",
+                    }}
+                  />
+                </div>
+              </div>
+
+              <div style={{ display: "flex", gap: "8px", marginTop: "8px" }}>
+                <button
+                  type="button"
+                  onClick={() => setIsEditingAccount(false)}
+                  style={{
+                    flex: 1, padding: "10px", borderRadius: "10px",
+                    backgroundColor: th.surface, border: `1px solid ${th.border}`,
+                    color: th.muted, fontWeight: "700", fontSize: "0.76rem", cursor: "pointer",
+                    fontFamily: "inherit",
+                  }}
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  style={{
+                    flex: 1, padding: "10px", borderRadius: "10px",
+                    backgroundColor: th.accent, border: "none",
+                    color: "#ffffff", fontWeight: "700", fontSize: "0.76rem", cursor: "pointer",
+                    display: "flex", alignItems: "center", justifyContent: "center", gap: "5px",
+                    fontFamily: "inherit",
+                  }}
+                >
+                  <Check size={14} />
+                  <span>Save Changes</span>
+                </button>
+              </div>
+            </form>
           </div>
         </div>
       )}

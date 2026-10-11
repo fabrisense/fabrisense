@@ -174,3 +174,26 @@ export function resetPassword(email, token, newPassword) {
 export function checkHealth() {
   return apiFetch('/health');
 }
+
+// ─── Inspection Operations ───────────────────────────────────────────────────
+
+/**
+ * Synchronize a completed inspection scan to backend SQLite and Supabase Cloud.
+ * @param {object} inspectionData
+ * @returns {Promise<{ success: boolean, inspectionId: string, imagePath?: string }>}
+ */
+export function syncInspectionRecord(inspectionData) {
+  return apiFetch('/inspections/sync', {
+    method: 'POST',
+    body: JSON.stringify(inspectionData),
+  });
+}
+
+/**
+ * Fetch latest inspections list from shared database.
+ * @returns {Promise<{ success: boolean, data: Array }>}
+ */
+export function fetchInspectionsList() {
+  return apiFetch('/inspections');
+}
+

@@ -140,11 +140,47 @@ export function AdminSettings() {
           <div className="admin-card-header">
             <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
               <Building size={18} color="#208c7d" />
-              <h3 className="admin-card-title">Organization &amp; Account</h3>
+              <h3 className="admin-card-title">Organization &amp; Administrator Account</h3>
             </div>
           </div>
 
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))', gap: '16px' }}>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: '16px' }}>
+            <div>
+              <label style={{ display: 'block', fontSize: '12.5px', fontWeight: '600', color: '#334155', marginBottom: '6px' }}>
+                Administrator Full Name
+              </label>
+              <input
+                type="text"
+                value={settings.adminName || 'Rajesh Kumar'}
+                onChange={(e) => handleChange('adminName', e.target.value)}
+                style={{ width: '100%', padding: '10px 12px', borderRadius: '8px', border: '1px solid #cbd5e1', fontSize: '13.5px', boxSizing: 'border-box' }}
+              />
+            </div>
+
+            <div>
+              <label style={{ display: 'block', fontSize: '12.5px', fontWeight: '600', color: '#334155', marginBottom: '6px' }}>
+                Admin Email Address
+              </label>
+              <input
+                type="email"
+                value={settings.systemEmail}
+                onChange={(e) => handleChange('systemEmail', e.target.value)}
+                style={{ width: '100%', padding: '10px 12px', borderRadius: '8px', border: '1px solid #cbd5e1', fontSize: '13.5px', boxSizing: 'border-box' }}
+              />
+            </div>
+
+            <div>
+              <label style={{ display: 'block', fontSize: '12.5px', fontWeight: '600', color: '#334155', marginBottom: '6px' }}>
+                Contact Phone
+              </label>
+              <input
+                type="tel"
+                value={settings.adminPhone || '+91 98765 43210'}
+                onChange={(e) => handleChange('adminPhone', e.target.value)}
+                style={{ width: '100%', padding: '10px 12px', borderRadius: '8px', border: '1px solid #cbd5e1', fontSize: '13.5px', boxSizing: 'border-box' }}
+              />
+            </div>
+
             <div>
               <label style={{ display: 'block', fontSize: '12.5px', fontWeight: '600', color: '#334155', marginBottom: '6px' }}>
                 Company / Mill Name
@@ -153,18 +189,6 @@ export function AdminSettings() {
                 type="text"
                 value={settings.companyName}
                 onChange={(e) => handleChange('companyName', e.target.value)}
-                style={{ width: '100%', padding: '10px 12px', borderRadius: '8px', border: '1px solid #cbd5e1', fontSize: '13.5px', boxSizing: 'border-box' }}
-              />
-            </div>
-
-            <div>
-              <label style={{ display: 'block', fontSize: '12.5px', fontWeight: '600', color: '#334155', marginBottom: '6px' }}>
-                System Notification Email
-              </label>
-              <input
-                type="email"
-                value={settings.systemEmail}
-                onChange={(e) => handleChange('systemEmail', e.target.value)}
                 style={{ width: '100%', padding: '10px 12px', borderRadius: '8px', border: '1px solid #cbd5e1', fontSize: '13.5px', boxSizing: 'border-box' }}
               />
             </div>

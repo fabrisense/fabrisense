@@ -18,6 +18,7 @@ import {
   ChevronDown
 } from 'lucide-react';
 import { getAdminUser, clearAdminAuth } from '../../services/adminApi';
+import logoImg from '../../assets/logo.jpg';
 
 const NAV_ITEMS = [
   { path: '/admin/dashboard',   label: 'Dashboard',         icon: LayoutDashboard },
@@ -91,8 +92,8 @@ export function AdminLayout() {
       <aside className={`admin-sidebar ${sidebarOpen ? 'open' : ''}`}>
         <div className="admin-sidebar-header">
           <div className="admin-sidebar-brand">
-            <div className="admin-brand-icon">
-              <ClipboardCheck size={22} />
+            <div className="admin-brand-icon" style={{ overflow: 'hidden', padding: 0, width: '38px', height: '38px', borderRadius: '10px' }}>
+              <img src={logoImg} alt="FabriSense" style={{ width: '100%', height: '100%', objectFit: 'cover' }} draggable={false} />
             </div>
             <div>
               <div className="admin-brand-title">FabriSense</div>

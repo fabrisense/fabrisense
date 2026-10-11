@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { ClipboardCheck, Lock, Mail, AlertCircle, ArrowRight, ShieldCheck, Eye, EyeOff } from 'lucide-react';
 import { loginAdmin, setAdminAuth } from '../../services/adminApi';
+import logoImg from '../../assets/logo.jpg';
 
 export function AdminLogin() {
   const [email, setEmail] = useState('');
@@ -98,19 +99,15 @@ export function AdminLogin() {
         <div style={{ textAlign: 'center', marginBottom: '28px' }}>
           <div
             style={{
-              width: '54px',
-              height: '54px',
-              borderRadius: '12px',
-              background: 'linear-gradient(135deg, #208c7d 0%, #156257 100%)',
-              color: '#ffffff',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
+              width: '58px',
+              height: '58px',
+              borderRadius: '16px',
+              overflow: 'hidden',
               margin: '0 auto 16px',
-              boxShadow: '0 8px 16px rgba(32, 140, 125, 0.3)',
+              boxShadow: '0 8px 24px rgba(0, 0, 0, 0.25)',
             }}
           >
-            <ClipboardCheck size={28} />
+            <img src={logoImg} alt="FabriSense" style={{ width: '100%', height: '100%', objectFit: 'cover' }} draggable={false} />
           </div>
 
           <h1

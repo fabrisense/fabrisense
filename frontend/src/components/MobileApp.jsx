@@ -5,7 +5,7 @@ import { UserLoginView } from './UserLoginView';
 import { AdminLoginView } from './AdminLoginView';
 import { Dashboard }    from './Dashboard';
 import { AdminDashboard } from './AdminDashboard';
-import { ExternalLink } from 'lucide-react';
+
 import {
   getProfileFromUser,
   getSupabase,
@@ -138,7 +138,18 @@ export function MobileApp() {
   const renderContent = () => {
     if (isDashboard) {
       if (userSession?.role === 'Admin') {
-        return <AdminDashboard userData={userSession} onLogout={handleLogout} />;
+        return (
+          <AdminDashboard
+            userData={userSession}
+            onLogout={handleLogout}
+            onUpdateUserData={(updated) => {
+              setUserSession((prev) => ({ ...prev, ...updated }));
+              try {
+                localStorage.setItem('fabrisense_admin_profile', JSON.stringify(updated));
+              } catch (e) {}
+            }}
+          />
+        );
       }
       return <Dashboard userData={userSession} onLogout={handleLogout} />;
     }
@@ -234,41 +245,6 @@ export function MobileApp() {
         position: 'relative',
       }}
     >
-      {/* Floating link to Desktop Admin Portal - Hidden on admin login since admin login leads directly to the admin dashboard */}
-      {viewState !== 'adminLogin' && animating !== 'adminIn' && screen !== 'dashboard' && (
-        <div
-          style={{
-            position: 'fixed',
-            top: '14px',
-            right: '14px',
-            zIndex: 9999,
-          }}
-        >
-          <a
-            href="/admin/dashboard"
-            style={{
-              backgroundColor: '#1f2a44',
-              color: '#ffffff',
-              border: '1px solid rgba(32, 140, 125, 0.4)',
-              padding: '6px 12px',
-              borderRadius: '20px',
-              fontSize: '11.5px',
-              fontWeight: '600',
-              textDecoration: 'none',
-              display: 'flex',
-              alignItems: 'center',
-              gap: '6px',
-              boxShadow: '0 4px 12px rgba(0,0,0,0.4)',
-              backdropFilter: 'blur(8px)',
-            }}
-            title="Switch to Management Admin Portal"
-          >
-            <span style={{ width: '6px', height: '6px', borderRadius: '50%', backgroundColor: '#208c7d' }} />
-            <span>Admin Portal</span>
-            <ExternalLink size={12} />
-          </a>
-        </div>
-      )}
 
       {/* Desktop subtle grid pattern */}
       <div
@@ -290,7 +266,7 @@ export function MobileApp() {
           zIndex: 1,
           width: '390px',
           height: '844px',
-          borderRadius: '44px',
+          borderRadius: '0px',
           overflow: 'hidden',
           boxShadow:
             '0 0 0 1px rgba(255,255,255,0.08), 0 40px 80px rgba(0,0,0,0.7), 0 0 120px rgba(0,0,0,0.4)',

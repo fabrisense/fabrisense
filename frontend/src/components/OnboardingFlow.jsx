@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import onboarding1 from '../assets/onboarding_1.jpg';
 import onboarding2 from '../assets/onboarding_2.jpg';
 import onboarding3 from '../assets/onboarding_3.jpg';
+import logoImg from '../assets/logo.jpg';
 
 export function OnboardingFlow({ onComplete }) {
   const [currentStep, setCurrentStep] = useState(0);
@@ -84,16 +85,19 @@ export function OnboardingFlow({ onComplete }) {
           }}
         >
           {/* Logo Badge */}
-          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
             <div
               style={{
-                width: '8px',
-                height: '20px',
-                backgroundColor: 'var(--accent-green)',
-                borderRadius: '3px',
-                boxShadow: '0 0 10px var(--accent-green-glow)',
+                width: '32px',
+                height: '32px',
+                borderRadius: '9px',
+                overflow: 'hidden',
+                boxShadow: '0 0 16px rgba(6,182,120,0.3)',
+                flexShrink: 0,
               }}
-            />
+            >
+              <img src={logoImg} alt="FabriSense" style={{ width: '100%', height: '100%', objectFit: 'cover' }} draggable={false} />
+            </div>
             <span style={{ fontSize: '1.3rem', fontWeight: '800', color: 'var(--text-heading)', letterSpacing: '-0.01em' }}>
               FabriSense
             </span>

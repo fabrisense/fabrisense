@@ -1,5 +1,6 @@
 import React from 'react';
-import { ShieldCheck, Volume2, VolumeX, Sparkles, Flame } from 'lucide-react';
+import { ShieldCheck, Volume2, VolumeX, Sparkles } from 'lucide-react';
+import logoImg from '../assets/logo.jpg';
 
 export function Navbar({ soundEnabled, setSoundEnabled, glowIntensity, setGlowIntensity }) {
   const toggleSound = () => {
@@ -13,8 +14,8 @@ export function Navbar({ soundEnabled, setSoundEnabled, glowIntensity, setGlowIn
   return (
     <header className="navbar-header" style={navStyle}>
       <div className="nav-logo" style={logoStyle}>
-        <div style={iconBadgeStyle}>
-          <Flame size={20} color="var(--accent-green)" />
+        <div style={{ ...iconBadgeStyle, overflow: 'hidden', padding: 0 }}>
+          <img src={logoImg} alt="FabriSense" style={{ width: '100%', height: '100%', objectFit: 'cover' }} draggable={false} />
         </div>
         <span style={{ fontSize: '1.25rem', fontWeight: 800, letterSpacing: '0.04em', color: 'var(--text-heading)' }}>
           FABRI<span className="highlight-text">SENSE</span>

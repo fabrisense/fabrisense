@@ -4,9 +4,13 @@ import {
   CheckCircle2, X, ShieldCheck, Layers, ArrowLeft,
   Camera, Upload, RefreshCw, CheckCircle, AlertCircle,
   Settings, Bell, Globe, HelpCircle, Info, ChevronRight,
-  Edit3, Check, Phone, Mail, Building, Sparkles
+  Edit3, Check, Phone, Mail, Building, Sparkles,
+  Share2, Download, FileText, ChevronDown, ChevronUp,
+  Printer, Copy, Award, Tag
 } from 'lucide-react';
-import { InspectionResultFlow } from './InspectionResultFlow';
+import jsPDF from 'jspdf';
+import { InspectionResultFlow, DEFECT_DATA } from './InspectionResultFlow';
+import { syncInspectionRecord, fetchInspectionsList } from '../services/api';
 import kanchipuramSilk from '../assets/kanchipuram_silk.jpg';
 import indigoDenim from '../assets/indigo_denim.jpg';
 
@@ -41,7 +45,6 @@ export function Dashboard({ userData = {}, onLogout }) {
   const cameraInputRef = useRef(null);
   const uploadInputRef = useRef(null);
 
-  // Inspections default to empty (null state requested by user)
   const [inspections, setInspections] = useState(() => {
     try {
       const saved = localStorage.getItem('fabrisense_inspections');
@@ -50,6 +53,12 @@ export function Dashboard({ userData = {}, onLogout }) {
       return [];
     }
   });
+
+  // Selected inspection for viewing full contents and report details
+  const [selectedInspection, setSelectedInspection] = useState(null);
+  const [historyFilter, setHistoryFilter] = useState('all'); // 'all' | 'grade_a' | 'with_defects'
+  const [expandedDetailDefects, setExpandedDetailDefects] = useState({});
+  const [copyDetailToast, setCopyDetailToast] = useState(false);
 
   // ── Profile State & Settings Modals ──
   const [profileUser, setProfileUser] = useState(() => {
@@ -169,23 +178,57 @@ export function Dashboard({ userData = {}, onLogout }) {
     let isMounted = true;
     const fetchSharedInspections = async () => {
       try {
-        const apiBase = (import.meta.env.VITE_API_BASE_URL || '').replace(/\/$/, '');
-        const res = await fetch(`${apiBase}/api/inspections`);
-        if (!res.ok) return;
-        const result = await res.json();
-        if (result.success && Array.isArray(result.data) && isMounted) {
+        const result = await fetchInspectionsList();
+        if (result && result.success && Array.isArray(result.data) && isMounted) {
           if (result.data.length > 0) {
-            const mapped = result.data.map((item) => ({
-              id: item.inspection_id || item.id,
-              title: item.fabric_name || item.fabric_type || 'Fabric Roll',
-              time: item.inspection_date ? new Date(item.inspection_date).toLocaleDateString() : 'Recent scan',
-              grade: `GRADE ${item.grade || 'B'}`,
-              defects: item.defect_count ?? 0,
-              type: (item.fabric_type || '').toLowerCase().includes('denim') ? 'denim' : 'silk',
-              raw: item,
-            }));
-            setInspections(mapped);
-            try { localStorage.setItem('fabrisense_inspections', JSON.stringify(mapped)); } catch (_) {}
+            const mapped = result.data.map((item) => {
+              const cleanGrade = (item.grade || 'B').replace(/^GRADE\s*/i, '').trim();
+              let parsedDefects = [];
+              try {
+                parsedDefects = typeof item.defects === 'string' ? JSON.parse(item.defects) : (item.defects || []);
+              } catch (_) {
+                parsedDefects = [];
+              }
+              const isDenim = (item.fabric_type || item.fabric_name || '').toLowerCase().includes('denim');
+              return {
+                id: item.inspection_id || item.id,
+                title: item.fabric_name || item.fabric_type || 'Fabric Roll',
+                fabricType: item.fabric_type || item.fabric_name || 'Handloom Cotton-Silk Blend',
+                time: item.inspection_date ? new Date(item.inspection_date).toLocaleDateString([], { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' }) : 'Recent scan',
+                date: item.inspection_date || new Date().toISOString(),
+                grade: `GRADE ${cleanGrade}`,
+                defects: item.defect_count ?? (parsedDefects.length || 0),
+                type: isDenim ? 'denim' : 'silk',
+                status: item.status || (cleanGrade === 'A' ? 'Passed' : cleanGrade === 'B' ? 'Review' : 'Failed'),
+                image: item.image_path || (isDenim ? indigoDenim : kanchipuramSilk),
+                imagePath: item.image_path || '/assets/indigo_denim.jpg',
+                overallSummary: item.overall_summary || 'Inspection completed and verified.',
+                aiExplanation: item.ai_explanation || item.overall_summary || (cleanGrade === 'A'
+                  ? 'Fabric surface inspected under multi-spectrum lighting. Zero weave flaws detected.'
+                  : DEFECT_DATA.aiExplanation),
+                gradeExplanation: cleanGrade === 'A'
+                  ? 'Batch meets zero-defect criteria with uniform weave tension.'
+                  : DEFECT_DATA.gradeExplanation,
+                recommendedAction: item.recommended_action || (cleanGrade === 'A'
+                  ? 'Approved for production.'
+                  : 'Flag roll section for quality review.'),
+                inspectorName: item.inspector_name || 'Rajesh Kumar',
+                inspectorEmail: item.inspector_email || 'inspector@fabrisense.com',
+                defectsList: Array.isArray(parsedDefects) && parsedDefects.length > 0 ? parsedDefects : (cleanGrade === 'A' ? [] : DEFECT_DATA.defects),
+                raw: item,
+              };
+            });
+            setInspections((prev) => {
+              const existingIds = new Set(prev.map(p => p.id));
+              const merged = [...prev];
+              mapped.forEach(m => {
+                if (!existingIds.has(m.id)) {
+                  merged.push(m);
+                }
+              });
+              try { localStorage.setItem('fabrisense_inspections', JSON.stringify(merged)); } catch (_) {}
+              return merged;
+            });
           }
         }
       } catch (err) {
@@ -349,48 +392,78 @@ export function Dashboard({ userData = {}, onLogout }) {
 
   // ── Save report directly from the 4-page flow ──
   const handleSaveBatchFromFlow = async (record) => {
-    const assignedId = `INS-${new Date().getFullYear()}-${String(record?.id || Date.now()).slice(-4)}`;
+    const assignedId = record?.id && String(record.id).startsWith('INS-')
+      ? record.id
+      : `INS-${new Date().getFullYear()}-${Math.floor(1000 + Math.random() * 9000)}`;
+
+    const cleanGrade = (record?.grade || 'GRADE B').replace(/^GRADE\s*/i, '').trim() || 'B';
+    const defectsCount = typeof record?.defects === 'number' ? record.defects : (cleanGrade === 'A' ? 0 : 3);
+    const fabricTitle = record?.title || record?.fabricType || (cleanGrade === 'A' ? 'Pure Silk Weave' : 'Handloom Cotton-Silk Blend');
+
     const newRecord = {
       id: assignedId,
-      title: record?.title || 'Handloom Cotton-Silk Blend',
-      time: record?.time || 'Today • 3 defects found',
-      grade: record?.grade || 'GRADE B',
-      defects: record?.defects !== undefined ? record.defects : 3,
-      type: 'silk',
+      title: fabricTitle,
+      fabricType: record?.fabricType || fabricTitle,
+      time: `Today • ${new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`,
+      date: new Date().toISOString(),
+      grade: `GRADE ${cleanGrade}`,
+      defects: defectsCount,
+      image: record?.image || capturedImage || (fabricTitle.toLowerCase().includes('denim') ? indigoDenim : kanchipuramSilk),
+      imagePath: record?.image || capturedImage || '/assets/indigo_denim.jpg',
+      type: fabricTitle.toLowerCase().includes('denim') ? 'denim' : 'silk',
+      status: cleanGrade === 'A' ? 'Passed' : cleanGrade === 'B' ? 'Review' : 'Failed',
+      severityScale: record?.severityScale || (cleanGrade === 'A' ? 'None' : 'Moderate'),
+      mainIssues: record?.mainIssues || (cleanGrade === 'A' ? 'None' : 'Stain, Hole, Broken Yarn'),
+      overallSummary: record?.overallSummary || (cleanGrade === 'A'
+        ? 'High quality fabric scan passed zero-defect benchmark. Fiber uniformity and weave tension conform to Grade A specifications.'
+        : 'Fabric optical scan detected minor and moderate surface imperfections. Structural integrity is preserved with manual review recommended.'),
+      aiExplanation: record?.aiExplanation || (cleanGrade === 'A'
+        ? 'Fabric surface inspected under multi-spectrum lighting. Warp and weft threads exhibit zero flaws, uniform tension, and zero blemishes.'
+        : DEFECT_DATA.aiExplanation),
+      gradeExplanation: record?.gradeExplanation || (cleanGrade === 'A'
+        ? 'Fabric passed zero-defect benchmark with exceptional weave integrity.'
+        : DEFECT_DATA.gradeExplanation),
+      recommendedAction: record?.recommendedAction || (cleanGrade === 'A'
+        ? 'Batch approved for production & premium export certification.'
+        : 'Flag roll section for cutting or mend with micro-stitching if permitted.'),
+      defectsList: Array.isArray(record?.defectsList) ? record.defectsList : (cleanGrade === 'A' ? [] : DEFECT_DATA.defects),
+      inspectorName: userData?.name || profileUser?.name || 'Rajesh Kumar',
+      inspectorEmail: userData?.email || profileUser?.email || 'inspector@fabrisense.com',
     };
+
+    // Increment inspections count by 1!
     const updated = [newRecord, ...inspections];
     setInspections(updated);
     try { localStorage.setItem('fabrisense_inspections', JSON.stringify(updated)); }
     catch (e) { console.error(e); }
 
-    // Sync to shared backend database (Supabase Cloud PostgreSQL & SQLite dual-sync)
+    // Close inspect phase and immediately show history!
+    setInspectPhase('idle');
+    setAnalysisStep(-1);
+    setCapturedImage(null);
+    setScanResult(null);
+    setActiveTab('history');
+    setSelectedInspection(newRecord); // Make all related contents immediately visible!
+    showToast(`Inspection ${assignedId} saved! Total inspections updated (+1).`);
+
+    // Dual-sync to shared backend database (Supabase Cloud PostgreSQL & SQLite dual-sync)
     try {
-      const cleanGrade = (newRecord.grade || 'B').replace(/GRADE\s*/i, '').trim() || 'B';
-      const apiBase = (import.meta.env.VITE_API_BASE_URL || '').replace(/\/$/, '');
-      const response = await fetch(`${apiBase}/api/inspections/sync`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          id: assignedId,
-          fabricType: newRecord.title || 'Handloom Blend',
-          fabricName: newRecord.title || 'Handloom Blend',
-          imagePath: capturedImage || '/assets/indigo_denim.jpg',
-          defectCount: typeof newRecord.defects === 'number' ? newRecord.defects : 3,
-          grade: cleanGrade,
-          status: cleanGrade === 'A' ? 'Passed' : cleanGrade === 'B' ? 'Review' : 'Failed',
-          overallSummary: 'Mobile fabric quality scan completed.',
-          recommendedAction: cleanGrade === 'A' ? 'Batch approved for production.' : 'Flagged for quality review.',
-          inspectorName: userData?.name || 'Ananthi Kumar',
-          inspectorEmail: userData?.email || 'inspector@weavesofindia.com',
-          defects: record?.defectsList || [],
-        }),
+      await syncInspectionRecord({
+        id: assignedId,
+        fabricType: newRecord.fabricType,
+        fabricName: newRecord.title,
+        imagePath: newRecord.imagePath,
+        defectCount: newRecord.defects,
+        grade: cleanGrade,
+        status: newRecord.status,
+        overallSummary: newRecord.overallSummary,
+        recommendedAction: newRecord.recommendedAction,
+        inspectorName: newRecord.inspectorName,
+        inspectorEmail: newRecord.inspectorEmail,
+        defects: newRecord.defectsList,
       });
-      const data = await response.json();
-      if (data.success && data.inspectionId) {
-        newRecord.id = data.inspectionId;
-      }
     } catch (err) {
-      console.warn('Database sync warning:', err);
+      console.warn('Database sync notice:', err);
     }
   };
 
@@ -410,54 +483,179 @@ export function Dashboard({ userData = {}, onLogout }) {
     e.target.value = '';
   };
 
-  // ── Save result to history ──
+  // ── Save result to history (fallback direct save) ──
   const handleSaveBatch = async () => {
-    if (!scanResult) return;
-    const assignedId = `INS-${new Date().getFullYear()}-${String(Date.now()).slice(-4)}`;
+    const assignedId = `INS-${new Date().getFullYear()}-${Math.floor(1000 + Math.random() * 9000)}`;
     const newRecord = {
       id: assignedId,
-      title: scanResult.fabric || 'Pure Silk Weave',
-      time: 'Today • No defects',
-      grade: scanResult.grade || 'GRADE A',
-      defects: scanResult.defects || 0,
+      title: scanResult?.fabric || 'Pure Silk Weave',
+      fabricType: scanResult?.fabric || 'Pure Silk Weave',
+      time: `Today • ${new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`,
+      date: new Date().toISOString(),
+      grade: scanResult?.grade || 'GRADE A',
+      defects: scanResult?.defects || 0,
+      image: capturedImage || kanchipuramSilk,
+      imagePath: capturedImage || '/assets/indigo_denim.jpg',
       type: 'silk',
+      status: 'Passed',
+      severityScale: 'None',
+      mainIssues: 'None detected',
+      overallSummary: 'Fabric batch passed zero-defect standard.',
+      aiExplanation: 'Fabric surface inspected under multi-spectrum lighting. Warp and weft threads exhibit zero flaws.',
+      gradeExplanation: 'Batch passed zero-defect benchmark with exceptional weave integrity.',
+      recommendedAction: 'Approved for production.',
+      defectsList: [],
+      inspectorName: userData?.name || profileUser?.name || 'Rajesh Kumar',
+      inspectorEmail: userData?.email || profileUser?.email || 'inspector@fabrisense.com',
     };
     const updated = [newRecord, ...inspections];
     setInspections(updated);
     try { localStorage.setItem('fabrisense_inspections', JSON.stringify(updated)); }
     catch (e) { console.error(e); }
 
-    // Sync to shared backend database
-    try {
-      const cleanGrade = (newRecord.grade || 'A').replace(/GRADE\s*/i, '').trim() || 'A';
-      const apiBase = (import.meta.env.VITE_API_BASE_URL || '').replace(/\/$/, '');
-      await fetch(`${apiBase}/api/inspections/sync`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          id: assignedId,
-          fabricType: newRecord.title || 'Silk Sample',
-          fabricName: newRecord.title || 'Silk Sample',
-          imagePath: capturedImage || '/assets/indigo_denim.jpg',
-          defectCount: 0,
-          grade: cleanGrade,
-          status: 'Passed',
-          overallSummary: 'Fabric batch passed zero-defect standard.',
-          recommendedAction: 'Approved for production.',
-          inspectorName: userData?.name || 'Ananthi Kumar',
-          inspectorEmail: userData?.email || 'inspector@weavesofindia.com',
-          defects: [],
-        }),
-      });
-    } catch (err) {
-      console.warn('Database sync warning:', err);
-    }
-
     setInspectPhase('idle');
     setAnalysisStep(-1);
     setCapturedImage(null);
     setScanResult(null);
-    setActiveTab('home');
+    setActiveTab('history');
+    setSelectedInspection(newRecord);
+    showToast(`Inspection ${assignedId} saved! Added to history (+1)`);
+
+    try {
+      await syncInspectionRecord({
+        id: assignedId,
+        fabricType: newRecord.fabricType,
+        fabricName: newRecord.title,
+        imagePath: newRecord.imagePath,
+        defectCount: 0,
+        grade: 'A',
+        status: 'Passed',
+        overallSummary: newRecord.overallSummary,
+        recommendedAction: newRecord.recommendedAction,
+        inspectorName: newRecord.inspectorName,
+        inspectorEmail: newRecord.inspectorEmail,
+        defects: [],
+      });
+    } catch (err) {
+      console.warn('Database sync notice:', err);
+    }
+  };
+
+  // ── Detail Report Actions (PDF, CSV, JSON, Share) ──
+  const handleDownloadReportPDF = (item) => {
+    if (!item) return;
+    try {
+      const doc = new jsPDF();
+      doc.setFillColor(15, 23, 42);
+      doc.rect(0, 0, 210, 24, 'F');
+      doc.setTextColor(255, 255, 255);
+      doc.setFontSize(14);
+      doc.text('FABRISENSE AI FABRIC INSPECTION REPORT', 14, 16);
+
+      doc.setTextColor(15, 23, 42);
+      doc.setFontSize(12);
+      doc.text(`Report ID: ${item.id}`, 14, 38);
+      doc.setFontSize(10);
+      doc.text(`Date & Time: ${item.time || item.date || 'Today'}`, 14, 46);
+      doc.text(`Fabric Type: ${item.fabricType || item.title}`, 14, 53);
+      doc.text(`Overall Grade: ${item.grade} (${item.status || 'Passed'})`, 14, 60);
+      doc.text(`Total Defects: ${item.defects ?? 0}`, 14, 67);
+      doc.text(`Inspector: ${item.inspectorName || 'Rajesh Kumar'}`, 14, 74);
+
+      doc.text('AI Assessment Summary:', 14, 85);
+      const splitSummary = doc.splitTextToSize(item.aiExplanation || item.overallSummary || 'Zero defects detected.', 180);
+      doc.text(splitSummary, 14, 92);
+
+      if (Array.isArray(item.defectsList) && item.defectsList.length > 0) {
+        doc.setFillColor(241, 245, 249);
+        doc.rect(14, 115, 182, 8, 'F');
+        doc.setFontSize(9);
+        doc.setTextColor(71, 85, 105);
+        doc.text('# Defect Name', 18, 120);
+        doc.text('Severity', 65, 120);
+        doc.text('Confidence', 105, 120);
+        doc.text('Recommended Action', 140, 120);
+
+        let yPos = 130;
+        item.defectsList.forEach((d, idx) => {
+          doc.setFontSize(9);
+          doc.setTextColor(15, 23, 42);
+          doc.text(`${idx + 1}. ${d.name}`, 18, yPos);
+          doc.text(d.severity || 'Moderate', 65, yPos);
+          doc.text(d.confidence || '90%', 105, yPos);
+          const act = doc.splitTextToSize(d.recommendedAction || 'Inspect area', 55);
+          doc.text(act, 140, yPos);
+          yPos += 14;
+        });
+      }
+
+      doc.save(`FabriSense_Report_${item.id}.pdf`);
+      showToast(`Downloaded PDF for ${item.id}`);
+    } catch (e) {
+      console.error(e);
+      showToast('Could not generate PDF');
+    }
+  };
+
+  const handleExportReportCSV = (item) => {
+    if (!item) return;
+    let csv = 'Report_ID,Date,Fabric_Type,Grade,Total_Defects,Status,Inspector,Defect_Name,Severity,Confidence,Action\n';
+    if (Array.isArray(item.defectsList) && item.defectsList.length > 0) {
+      item.defectsList.forEach(d => {
+        csv += `"${item.id}","${item.time}","${item.fabricType || item.title}","${item.grade}","${item.defects}","${item.status}","${item.inspectorName}","${d.name}","${d.severity}","${d.confidence}","${(d.recommendedAction || '').replace(/"/g, '""')}"\n`;
+      });
+    } else {
+      csv += `"${item.id}","${item.time}","${item.fabricType || item.title}","${item.grade}","0","Passed","${item.inspectorName}","None","None","100%","Approved for production"\n`;
+    }
+    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = `FabriSense_${item.id}.csv`;
+    link.click();
+    URL.revokeObjectURL(url);
+    showToast(`Exported CSV for ${item.id}`);
+  };
+
+  const handleExportReportJSON = (item) => {
+    if (!item) return;
+    const jsonStr = JSON.stringify(item, null, 2);
+    const blob = new Blob([jsonStr], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = `FabriSense_${item.id}.json`;
+    link.click();
+    URL.revokeObjectURL(url);
+    showToast(`Exported JSON for ${item.id}`);
+  };
+
+  const handleShareReport = async (item) => {
+    if (!item) return;
+    const text = `🧵 FabriSense Inspection Report\nReport ID: ${item.id}\nFabric: ${item.fabricType || item.title}\nGrade: ${item.grade}\nDefects: ${item.defects}\nStatus: ${item.status}\nInspector: ${item.inspectorName || 'Rajesh Kumar'}`;
+    if (navigator.share) {
+      try {
+        await navigator.share({ title: `FabriSense Report ${item.id}`, text, url: window.location.href });
+        return;
+      } catch (_) {}
+    }
+    navigator.clipboard?.writeText(text);
+    setCopyDetailToast('Report link copied to clipboard!');
+    setTimeout(() => setCopyDetailToast(false), 2000);
+  };
+
+  const handleCopyReportId = (id) => {
+    if (!id) return;
+    navigator.clipboard?.writeText(id);
+    setCopyDetailToast(`Report ID ${id} copied!`);
+    setTimeout(() => setCopyDetailToast(false), 2000);
+  };
+
+  const toggleDetailDefectAccordion = (id) => {
+    setExpandedDetailDefects(prev => ({
+      ...prev,
+      [id]: !prev[id],
+    }));
   };
 
   // ── Scan again ──
@@ -476,13 +674,14 @@ export function Dashboard({ userData = {}, onLogout }) {
     setActiveTab(tab);
   };
 
-  const displayName  = userData?.name  || 'Ananthi Kumar';
-  const displayEmail = userData?.email || 'inspector@weavesofindia.com';
+  const displayName  = userData?.name  || profileUser?.name || 'Ananthi Kumar';
+  const displayEmail = userData?.email || profileUser?.email || 'inspector@weavesofindia.com';
 
-  const totalInspections = inspections.length > 0 ? inspections.length : 'null';
-  const defectsFound     = inspections.length > 0 ? inspections.reduce((acc, cur) => acc + (cur.defects || 0), 0) : 'null';
-  const gradeABatches    = inspections.length > 0 ? inspections.filter(i => i.grade === 'GRADE A').length : 'null';
-  const lastActive       = inspections.length > 0 ? 'Today, 8:12 AM' : 'null';
+  // Accurate numerical metrics (updates +1 upon inspection)
+  const totalInspections = inspections.length;
+  const defectsFound     = inspections.reduce((acc, cur) => acc + (cur.defects || 0), 0);
+  const gradeABatches    = inspections.filter(i => (i.grade || '').includes('A')).length;
+  const lastActive       = inspections.length > 0 ? (inspections[0].time || 'Today') : 'No scans yet';
 
   return (
     <div style={outerWrapperStyle}>
@@ -535,8 +734,8 @@ export function Dashboard({ userData = {}, onLogout }) {
                 <div style={metricLabelStyle}>Total Inspections</div>
                 <div style={{
                   ...metricValStyle,
-                  color: totalInspections === 'null' ? '#64748b' : '#1e293b',
-                  fontSize: totalInspections === 'null' ? '28px' : '32px'
+                  color: totalInspections === 0 ? '#64748b' : '#1e293b',
+                  fontSize: '32px'
                 }}>
                   {totalInspections}
                 </div>
@@ -547,8 +746,8 @@ export function Dashboard({ userData = {}, onLogout }) {
                 <div style={metricLabelStyle}>Defects Found</div>
                 <div style={{
                   ...metricValStyle,
-                  color: defectsFound === 'null' ? '#64748b' : '#dc2626',
-                  fontSize: defectsFound === 'null' ? '28px' : '32px'
+                  color: defectsFound === 0 ? '#64748b' : '#dc2626',
+                  fontSize: '32px'
                 }}>
                   {defectsFound}
                 </div>
@@ -559,8 +758,8 @@ export function Dashboard({ userData = {}, onLogout }) {
                 <div style={metricLabelStyle}>Grade A Batches</div>
                 <div style={{
                   ...metricValStyle,
-                  color: gradeABatches === 'null' ? '#64748b' : '#16a34a',
-                  fontSize: gradeABatches === 'null' ? '28px' : '32px'
+                  color: gradeABatches === 0 ? '#64748b' : '#16a34a',
+                  fontSize: '32px'
                 }}>
                   {gradeABatches}
                 </div>
@@ -572,7 +771,7 @@ export function Dashboard({ userData = {}, onLogout }) {
                 <div style={{
                   ...metricValStyle,
                   color: '#64748b',
-                  fontSize: lastActive === 'null' ? '26px' : '16px',
+                  fontSize: inspections.length === 0 ? '16px' : '14.5px',
                   marginTop: '10px',
                   lineHeight: 1.25
                 }}>
@@ -581,41 +780,74 @@ export function Dashboard({ userData = {}, onLogout }) {
               </div>
             </div>
 
-            {/* ── Recent Inspections Section (All null) ── */}
+            {/* ── Recent Inspections Section ── */}
             <div style={sectionHeaderRowStyle}>
               <h2 style={sectionHeadingStyle}>Recent Inspections</h2>
-              <span style={{ fontSize: '13px', color: '#64748b', fontWeight: '600' }}>null</span>
+              {inspections.length > 0 ? (
+                <button
+                  onClick={() => setActiveTab('history')}
+                  style={{
+                    background: 'none',
+                    border: 'none',
+                    color: '#1b7a63',
+                    fontSize: '13px',
+                    fontWeight: '700',
+                    cursor: 'pointer',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '4px',
+                    padding: 0,
+                  }}
+                >
+                  View All ({inspections.length}) <ChevronRight size={14} />
+                </button>
+              ) : (
+                <span style={{ fontSize: '13px', color: '#64748b', fontWeight: '600' }}>0 Scans</span>
+              )}
             </div>
 
             {inspections.length === 0 ? (
-              /* All null / empty state as requested */
               <div style={nullRecentInspectionsStyle}>
                 <div style={nullIconCircleStyle}>
                   <Layers size={24} color="#64748b" />
                 </div>
                 <div style={{ color: '#94a3b8', fontSize: '15px', fontWeight: '700' }}>
-                  null
+                  No Inspections Yet
                 </div>
                 <p style={{ color: '#64748b', fontSize: '12.5px', margin: '4px 0 0', textAlign: 'center', lineHeight: 1.4 }}>
                   No recent inspections found. Tap "Start New Inspection" to scan fabric batches.
                 </p>
               </div>
             ) : (
-              inspections.map((item) => (
-                <div key={item.id} style={inspectionCardStyle}>
+              inspections.slice(0, 3).map((item) => (
+                <div
+                  key={item.id}
+                  onClick={() => setSelectedInspection(item)}
+                  style={{
+                    ...inspectionCardStyle,
+                    cursor: 'pointer',
+                    transition: 'all 0.2s ease',
+                  }}
+                  title="Click to view inspection details & contents"
+                >
                   <div style={itemLeftGroupStyle}>
                     <img
-                      src={item.type === 'silk' ? kanchipuramSilk : indigoDenim}
+                      src={item.image || (item.type === 'silk' ? kanchipuramSilk : indigoDenim)}
                       alt={item.title}
                       style={itemThumbnailStyle}
                     />
                     <div>
                       <div style={itemTitleStyle}>{item.title}</div>
-                      <div style={itemSubtitleStyle}>{item.time}</div>
+                      <div style={itemSubtitleStyle}>
+                        {item.time} • <span style={{ fontFamily: 'monospace', fontSize: '11px', color: '#1b7a63' }}>{item.id}</span>
+                      </div>
                     </div>
                   </div>
-                  <div style={item.grade === 'GRADE A' ? gradeBadgeAStyle : gradeBadgeBStyle}>
-                    {item.grade}
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                    <div style={(item.grade || '').includes('A') ? gradeBadgeAStyle : gradeBadgeBStyle}>
+                      {item.grade}
+                    </div>
+                    <ChevronRight size={16} color="#94a3b8" />
                   </div>
                 </div>
               ))
@@ -1069,60 +1301,275 @@ export function Dashboard({ userData = {}, onLogout }) {
         {/* ── TAB 4: HISTORY PAGE ── */}
         {activeTab === 'history' && (
           <div style={contentScrollStyle}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '20px' }}>
+            {/* Header row with Title and Count badge */}
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '14px' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                <button
+                  onClick={() => setActiveTab('home')}
+                  style={{
+                    background: 'rgba(255, 255, 255, 0.1)',
+                    border: 'none',
+                    borderRadius: '50%',
+                    width: '34px',
+                    height: '34px',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    cursor: 'pointer',
+                    color: '#ffffff',
+                  }}
+                  title="Back to Home"
+                >
+                  <ArrowLeft size={18} />
+                </button>
+                <div>
+                  <h2 style={{ fontSize: '1.25rem', fontWeight: 800, color: '#ffffff', margin: 0, lineHeight: 1.1 }}>
+                    Inspection History
+                  </h2>
+                  <div style={{ fontSize: '11.5px', color: '#94a3b8', marginTop: '2px' }}>
+                    {inspections.length} total recorded fabric {inspections.length === 1 ? 'scan' : 'scans'}
+                  </div>
+                </div>
+              </div>
+
               <button
-                onClick={() => setActiveTab('home')}
+                onClick={() => handleTabChange('inspect')}
                 style={{
-                  background: 'rgba(255, 255, 255, 0.1)',
-                  border: 'none',
-                  borderRadius: '50%',
-                  width: '36px',
-                  height: '36px',
                   display: 'flex',
                   alignItems: 'center',
-                  justifyContent: 'center',
-                  cursor: 'pointer',
+                  gap: '5px',
+                  backgroundColor: '#1b7a63',
                   color: '#ffffff',
+                  border: 'none',
+                  borderRadius: '20px',
+                  padding: '6px 12px',
+                  fontSize: '12px',
+                  fontWeight: '700',
+                  cursor: 'pointer',
+                  boxShadow: '0 2px 8px rgba(27,122,99,0.4)',
                 }}
               >
-                <ArrowLeft size={20} />
+                <Scan size={14} /> New Scan
               </button>
-              <h2 style={{ fontSize: '1.25rem', fontWeight: 800, color: '#ffffff', margin: 0 }}>
-                Inspection History
-              </h2>
             </div>
+
+            {/* Filter pills */}
+            {inspections.length > 0 && (
+              <div style={{ display: 'flex', gap: '6px', marginBottom: '16px', overflowX: 'auto', paddingBottom: '4px' }}>
+                {[
+                  { id: 'all', label: `All (${inspections.length})` },
+                  { id: 'grade_a', label: `Grade A (${gradeABatches})` },
+                  { id: 'with_defects', label: `Defects (${inspections.filter(i => (i.defects || 0) > 0).length})` },
+                ].map(f => (
+                  <button
+                    key={f.id}
+                    onClick={() => setHistoryFilter(f.id)}
+                    style={{
+                      padding: '5px 12px',
+                      borderRadius: '16px',
+                      fontSize: '11.5px',
+                      fontWeight: '700',
+                      border: '1px solid',
+                      borderColor: historyFilter === f.id ? '#1b7a63' : 'rgba(255,255,255,0.15)',
+                      backgroundColor: historyFilter === f.id ? 'rgba(27,122,99,0.3)' : 'rgba(255,255,255,0.05)',
+                      color: historyFilter === f.id ? '#5eead4' : '#94a3b8',
+                      cursor: 'pointer',
+                      whiteSpace: 'nowrap',
+                      transition: 'all 0.2s ease',
+                    }}
+                  >
+                    {f.label}
+                  </button>
+                ))}
+              </div>
+            )}
 
             {inspections.length === 0 ? (
               <div style={nullRecentInspectionsStyle}>
                 <div style={nullIconCircleStyle}>
-                  <History size={24} color="#64748b" />
+                  <History size={26} color="#64748b" />
                 </div>
-                <div style={{ color: '#94a3b8', fontSize: '15px', fontWeight: '700' }}>
-                  null
+                <div style={{ color: '#ffffff', fontSize: '16px', fontWeight: '800' }}>
+                  No Inspection Records
                 </div>
-                <p style={{ color: '#64748b', fontSize: '12.5px', margin: '4px 0 0', textAlign: 'center' }}>
-                  No inspection history found.
+                <p style={{ color: '#94a3b8', fontSize: '13px', margin: '6px 0 16px', textAlign: 'center', lineHeight: 1.45, maxWidth: '280px' }}>
+                  Perform your first fabric scan to automatically record quality grades, defect markers, and AI inspection certificates.
                 </p>
+                <button
+                  onClick={() => handleTabChange('inspect')}
+                  style={{
+                    backgroundColor: '#1b7a63',
+                    color: '#ffffff',
+                    border: 'none',
+                    borderRadius: '20px',
+                    padding: '8px 18px',
+                    fontSize: '13px',
+                    fontWeight: '700',
+                    cursor: 'pointer',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '6px',
+                  }}
+                >
+                  <Scan size={16} /> Start Inspection Now
+                </button>
               </div>
             ) : (
-              inspections.map((item) => (
-                <div key={item.id} style={inspectionCardStyle}>
-                  <div style={itemLeftGroupStyle}>
-                    <img
-                      src={item.type === 'silk' ? kanchipuramSilk : indigoDenim}
-                      alt={item.title}
-                      style={itemThumbnailStyle}
-                    />
-                    <div>
-                      <div style={itemTitleStyle}>{item.title}</div>
-                      <div style={itemSubtitleStyle}>{item.time}</div>
-                    </div>
-                  </div>
-                  <div style={item.grade === 'GRADE A' ? gradeBadgeAStyle : gradeBadgeBStyle}>
-                    {item.grade}
-                  </div>
-                </div>
-              ))
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                {inspections
+                  .filter(item => {
+                    if (historyFilter === 'grade_a') return (item.grade || '').includes('A');
+                    if (historyFilter === 'with_defects') return (item.defects || 0) > 0;
+                    return true;
+                  })
+                  .map((item) => {
+                    const isGradeA = (item.grade || '').includes('A');
+                    return (
+                      <div
+                        key={item.id}
+                        onClick={() => setSelectedInspection(item)}
+                        style={{
+                          backgroundColor: '#1e2433',
+                          borderRadius: '16px',
+                          border: '1px solid rgba(255,255,255,0.08)',
+                          padding: '14px',
+                          cursor: 'pointer',
+                          transition: 'all 0.2s ease',
+                          display: 'flex',
+                          flexDirection: 'column',
+                          gap: '10px',
+                          boxShadow: '0 4px 14px rgba(0,0,0,0.25)',
+                        }}
+                        onMouseEnter={(e) => {
+                          e.currentTarget.style.borderColor = 'rgba(27,122,99,0.5)';
+                          e.currentTarget.style.transform = 'translateY(-1px)';
+                        }}
+                        onMouseLeave={(e) => {
+                          e.currentTarget.style.borderColor = 'rgba(255,255,255,0.08)';
+                          e.currentTarget.style.transform = 'translateY(0)';
+                        }}
+                      >
+                        {/* Top bar: ID tag, time, and Grade badge */}
+                        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                            <span style={{
+                              fontFamily: 'monospace',
+                              fontSize: '11px',
+                              fontWeight: '700',
+                              backgroundColor: 'rgba(27,122,99,0.2)',
+                              color: '#5eead4',
+                              padding: '2px 7px',
+                              borderRadius: '6px',
+                            }}>
+                              {item.id}
+                            </span>
+                            <span style={{ fontSize: '11.5px', color: '#64748b' }}>
+                              {item.time}
+                            </span>
+                          </div>
+
+                          <div style={isGradeA ? gradeBadgeAStyle : gradeBadgeBStyle}>
+                            {item.grade}
+                          </div>
+                        </div>
+
+                        {/* Middle row: Image thumbnail & Fabric details */}
+                        <div style={{ display: 'flex', gap: '12px', alignItems: 'center' }}>
+                          <img
+                            src={item.image || (item.type === 'silk' ? kanchipuramSilk : indigoDenim)}
+                            alt={item.title}
+                            style={{
+                              width: '56px',
+                              height: '56px',
+                              borderRadius: '12px',
+                              objectFit: 'cover',
+                              flexShrink: 0,
+                              border: '1px solid rgba(255,255,255,0.1)',
+                            }}
+                          />
+                          <div style={{ flex: 1, minWidth: 0 }}>
+                            <div style={{
+                              fontSize: '14.5px',
+                              fontWeight: '700',
+                              color: '#ffffff',
+                              whiteSpace: 'nowrap',
+                              overflow: 'hidden',
+                              textOverflow: 'ellipsis',
+                            }}>
+                              {item.title}
+                            </div>
+                            <div style={{
+                              display: 'flex',
+                              alignItems: 'center',
+                              gap: '6px',
+                              marginTop: '4px',
+                            }}>
+                              <span style={{
+                                fontSize: '11px',
+                                fontWeight: '700',
+                                padding: '2px 8px',
+                                borderRadius: '10px',
+                                backgroundColor: item.defects === 0 ? 'rgba(22,163,74,0.15)' : 'rgba(239,68,68,0.15)',
+                                color: item.defects === 0 ? '#4ade80' : '#f87171',
+                              }}>
+                                {item.defects === 0 ? 'Zero Defects' : `${item.defects} Defects Found`}
+                              </span>
+
+                              <span style={{
+                                fontSize: '11px',
+                                color: '#94a3b8',
+                              }}>
+                                Status: <strong style={{ color: item.status === 'Passed' ? '#4ade80' : '#f59e0b' }}>{item.status || 'Passed'}</strong>
+                              </span>
+                            </div>
+                          </div>
+                        </div>
+
+                        {/* Defect preview tags if defects exist */}
+                        {Array.isArray(item.defectsList) && item.defectsList.length > 0 && (
+                          <div style={{ display: 'flex', flexWrap: 'wrap', gap: '5px', paddingTop: '4px' }}>
+                            {item.defectsList.slice(0, 3).map((d, idx) => (
+                              <span
+                                key={idx}
+                                style={{
+                                  fontSize: '10.5px',
+                                  fontWeight: '700',
+                                  backgroundColor: 'rgba(255,255,255,0.06)',
+                                  color: d.severity === 'Critical' ? '#f87171' : d.severity === 'Moderate' ? '#fbbf24' : '#38bdf8',
+                                  padding: '2px 8px',
+                                  borderRadius: '6px',
+                                  border: '1px solid rgba(255,255,255,0.05)',
+                                }}
+                              >
+                                {d.name} • {d.confidence || '90%'}
+                              </span>
+                            ))}
+                            {item.defectsList.length > 3 && (
+                              <span style={{ fontSize: '10.5px', color: '#64748b', padding: '2px 4px' }}>
+                                +{item.defectsList.length - 3} more
+                              </span>
+                            )}
+                          </div>
+                        )}
+
+                        {/* Card bottom: Quick action prompt */}
+                        <div style={{
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'space-between',
+                          paddingTop: '8px',
+                          borderTop: '1px solid rgba(255,255,255,0.06)',
+                          fontSize: '12px',
+                          color: '#5eead4',
+                          fontWeight: '600',
+                        }}>
+                          <span>View Full Contents & Report</span>
+                          <ChevronRight size={15} color="#5eead4" />
+                        </div>
+                      </div>
+                    );
+                  })}
+              </div>
             )}
           </div>
         )}
@@ -1174,11 +1621,32 @@ export function Dashboard({ userData = {}, onLogout }) {
               onClick={() => handleTabChange('history')}
               style={navTabBtnStyle}
             >
-              <History
-                size={22}
-                color={activeTab === 'history' ? '#1b7a63' : '#94a3b8'}
-                strokeWidth={2}
-              />
+              <div style={{ position: 'relative', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                <History
+                  size={22}
+                  color={activeTab === 'history' ? '#1b7a63' : '#94a3b8'}
+                  strokeWidth={activeTab === 'history' ? 2.5 : 2}
+                />
+                {inspections.length > 0 && (
+                  <span style={{
+                    position: 'absolute',
+                    top: '-6px',
+                    right: '-10px',
+                    backgroundColor: '#1b7a63',
+                    color: '#ffffff',
+                    fontSize: '10px',
+                    fontWeight: '800',
+                    padding: '1px 5px',
+                    borderRadius: '10px',
+                    minWidth: '15px',
+                    textAlign: 'center',
+                    lineHeight: '13px',
+                    boxShadow: '0 2px 5px rgba(0,0,0,0.3)',
+                  }}>
+                    {inspections.length}
+                  </span>
+                )}
+              </div>
               <span style={{
                 ...navTabLabelStyle,
                 color: activeTab === 'history' ? '#1b7a63' : '#94a3b8',
@@ -1561,152 +2029,498 @@ export function Dashboard({ userData = {}, onLogout }) {
           </div>
         </div>
       )}
-      {false && (
-        <div style={modalOverlayStyle} onClick={() => setShowInspectionModal(false)}>
-          <div style={{ ...bottomSheetStyle, maxHeight: '90vh', overflowY: 'auto' }} onClick={(e) => e.stopPropagation()}>
-            <div style={sheetHeaderStyle}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                <div style={{ width: '8px', height: '8px', borderRadius: '50%', backgroundColor: isScanning ? '#ef4444' : '#16a34a' }} />
-                <h3 style={{ fontSize: '1.1rem', fontWeight: 800, margin: 0, color: '#0f172a' }}>
-                  {isScanning ? 'AI Optical Scanning...' : 'Inspection Complete'}
-                </h3>
+      {/* ── INSPECTION DETAILS MODAL (FULL CONTENTS & REPORT) ── */}
+      {selectedInspection && (
+        <div
+          style={{
+            position: 'fixed',
+            top: 0,
+            left: 0,
+            right: 0,
+            bottom: 0,
+            backgroundColor: 'rgba(10, 15, 26, 0.85)',
+            backdropFilter: 'blur(8px)',
+            zIndex: 10000,
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            padding: '16px',
+            boxSizing: 'border-box',
+          }}
+          onClick={() => setSelectedInspection(null)}
+        >
+          <div
+            style={{
+              backgroundColor: '#161d2b',
+              borderRadius: '24px',
+              width: '100%',
+              maxWidth: '440px',
+              maxHeight: '90vh',
+              overflowY: 'auto',
+              boxShadow: '0 25px 60px rgba(0, 0, 0, 0.7), 0 0 0 1px rgba(255, 255, 255, 0.1)',
+              color: '#ffffff',
+              display: 'flex',
+              flexDirection: 'column',
+              boxSizing: 'border-box',
+              position: 'relative',
+              padding: '20px',
+              gap: '16px',
+            }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            {/* 1. Header Row */}
+            <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between' }}>
+              <div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
+                  <button
+                    onClick={() => handleCopyReportId(selectedInspection.id)}
+                    title="Click to copy Report ID"
+                    style={{
+                      fontFamily: 'monospace',
+                      fontSize: '12px',
+                      fontWeight: '800',
+                      backgroundColor: 'rgba(27, 122, 99, 0.25)',
+                      color: '#5eead4',
+                      border: '1px solid rgba(27, 122, 99, 0.5)',
+                      borderRadius: '8px',
+                      padding: '3px 8px',
+                      cursor: 'pointer',
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      gap: '4px',
+                    }}
+                  >
+                    <span>{selectedInspection.id}</span>
+                    <Copy size={11} />
+                  </button>
+                  <span style={{
+                    fontSize: '11px',
+                    fontWeight: '700',
+                    padding: '2px 8px',
+                    borderRadius: '12px',
+                    backgroundColor: selectedInspection.status === 'Passed' ? 'rgba(22, 163, 74, 0.2)' : 'rgba(245, 158, 11, 0.2)',
+                    color: selectedInspection.status === 'Passed' ? '#4ade80' : '#fbbf24',
+                    border: '1px solid',
+                    borderColor: selectedInspection.status === 'Passed' ? 'rgba(74, 222, 128, 0.3)' : 'rgba(251, 191, 36, 0.3)',
+                  }}>
+                    {selectedInspection.status || 'Passed'}
+                  </span>
+                </div>
+                <div style={{ fontSize: '12px', color: '#94a3b8', marginTop: '4px' }}>
+                  {selectedInspection.time || 'Recently recorded'}
+                </div>
               </div>
+
               <button
-                onClick={() => setShowInspectionModal(false)}
-                style={closeBtnStyle}
+                onClick={() => setSelectedInspection(null)}
+                style={{
+                  background: 'rgba(255, 255, 255, 0.08)',
+                  border: 'none',
+                  borderRadius: '50%',
+                  width: '32px',
+                  height: '32px',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  cursor: 'pointer',
+                  color: '#94a3b8',
+                  transition: 'background 0.2s ease',
+                }}
+                title="Close"
               >
-                <X size={20} color="#64748b" />
+                <X size={18} />
               </button>
             </div>
 
-            {/* Viewfinder Preview Box */}
+            {/* Copy Toast feedback */}
+            {copyDetailToast && (
+              <div style={{
+                backgroundColor: 'rgba(27, 122, 99, 0.95)',
+                color: '#ffffff',
+                padding: '8px 12px',
+                borderRadius: '10px',
+                fontSize: '12px',
+                fontWeight: '700',
+                display: 'flex',
+                alignItems: 'center',
+                gap: '6px',
+                animation: 'fadeIn 0.2s ease',
+              }}>
+                <Check size={14} color="#ffffff" strokeWidth={3} />
+                <span>{typeof copyDetailToast === 'string' ? copyDetailToast : 'Copied to clipboard!'}</span>
+              </div>
+            )}
+
+            {/* 2. Fabric Title & Grade Hero Banner */}
             <div style={{
-              position: 'relative',
-              width: '100%',
-              height: '220px',
-              borderRadius: '16px',
-              overflow: 'hidden',
-              backgroundColor: '#000',
-              marginBottom: '16px',
+              background: 'linear-gradient(135deg, rgba(27, 122, 99, 0.25) 0%, rgba(15, 23, 42, 0.6) 100%)',
+              border: '1px solid rgba(27, 122, 99, 0.4)',
+              borderRadius: '18px',
+              padding: '16px',
               display: 'flex',
               alignItems: 'center',
-              justifyContent: 'center',
+              justifyContent: 'space-between',
+              gap: '12px',
             }}>
-              <img
-                src={kanchipuramSilk}
-                alt="Fabric Scan Preview"
-                style={{ width: '100%', height: '100%', objectFit: 'cover', opacity: 0.85 }}
-              />
+              <div style={{ flex: 1 }}>
+                <div style={{ fontSize: '11px', fontWeight: '700', color: '#5eead4', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+                  Optical Inspection Certificate
+                </div>
+                <h3 style={{ fontSize: '17px', fontWeight: '800', color: '#ffffff', margin: '4px 0 6px', lineHeight: 1.25 }}>
+                  {selectedInspection.title || selectedInspection.fabricType || 'Fabric Roll'}
+                </h3>
+                <div style={{ fontSize: '12px', color: '#cbd5e1', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                  <User size={13} color="#94a3b8" />
+                  <span>{selectedInspection.inspectorName || 'Rajesh Kumar'}</span>
+                  <CheckCircle size={13} color="#10b981" />
+                </div>
+              </div>
 
-              {/* Viewfinder Bounding Guides */}
+              {/* Quality Grade Pill */}
               <div style={{
-                position: 'absolute',
-                inset: '20px',
-                border: '2px dashed rgba(255, 255, 255, 0.7)',
-                borderRadius: '12px',
-                pointerEvents: 'none',
-              }} />
-
-              {isScanning && (
-                <div style={{
-                  position: 'absolute',
-                  top: '50%',
-                  left: 0,
-                  right: 0,
-                  height: '2px',
-                  backgroundColor: '#5eead4',
-                  boxShadow: '0 0 12px #5eead4',
-                  animation: 'pulse 1s infinite',
-                }} />
-              )}
-
-              <div style={{
-                position: 'absolute',
-                bottom: '12px',
-                left: '12px',
-                backgroundColor: 'rgba(0, 0, 0, 0.65)',
-                backdropFilter: 'blur(6px)',
-                padding: '4px 10px',
-                borderRadius: '8px',
+                backgroundColor: (selectedInspection.grade || '').includes('A') ? '#1b7a63' : '#d97706',
                 color: '#ffffff',
-                fontSize: '0.75rem',
-                fontWeight: 600,
+                padding: '8px 14px',
+                borderRadius: '14px',
+                fontWeight: '900',
+                fontSize: '15px',
+                letterSpacing: '0.02em',
+                boxShadow: (selectedInspection.grade || '').includes('A')
+                  ? '0 4px 14px rgba(27, 122, 99, 0.45)'
+                  : '0 4px 14px rgba(217, 119, 6, 0.45)',
+                textAlign: 'center',
+                flexShrink: 0,
               }}>
-                {isScanning ? 'Analyzing thread density...' : '99.4% Match Verified'}
+                {selectedInspection.grade || 'GRADE A'}
               </div>
             </div>
 
-            {isScanning ? (
-              <div style={{ textAlign: 'center', padding: '16px 0' }}>
-                <div style={{ fontSize: '0.9rem', color: '#64748b', fontWeight: 600 }}>
-                  Inspecting weft warp tension & surface integrity...
-                </div>
-              </div>
-            ) : scanResult ? (
-              <div>
-                <div style={{
-                  display: 'flex',
-                  justifyContent: 'space-between',
-                  alignItems: 'center',
-                  backgroundColor: '#f8fafc',
-                  border: '1px solid #e2e8f0',
-                  borderRadius: '12px',
-                  padding: '14px',
-                  marginBottom: '14px',
-                }}>
-                  <div>
-                    <div style={{ fontWeight: 800, color: '#0f172a' }}>{scanResult.fabric}</div>
-                    <div style={{ fontSize: '0.8rem', color: '#16a34a', fontWeight: 600, marginTop: '2px' }}>
-                      ✓ Zero Defects Detected
-                    </div>
-                  </div>
-                  <div style={gradeBadgeAStyle}>{scanResult.grade}</div>
-                </div>
+            {/* 3. Visual Fabric Image View with Defect Markers */}
+            <div style={{
+              position: 'relative',
+              width: '100%',
+              height: '210px',
+              borderRadius: '16px',
+              overflow: 'hidden',
+              backgroundColor: '#0a0f1a',
+              border: '1px solid rgba(255, 255, 255, 0.1)',
+            }}>
+              <img
+                src={selectedInspection.image || (selectedInspection.type === 'silk' ? kanchipuramSilk : indigoDenim)}
+                alt="Inspected fabric"
+                style={{ width: '100%', height: '100%', objectFit: 'cover' }}
+              />
 
-                <div style={{ display: 'flex', gap: '10px' }}>
-                  <button
-                    onClick={handleStartInspection}
+              {/* Bounding boxes overlay if defects exist */}
+              {Array.isArray(selectedInspection.defectsList) && selectedInspection.defectsList.map((d, idx) => {
+                const box = d.box || (idx === 0
+                  ? { top: '38%', left: '52%', width: '38%', height: '34%' }
+                  : idx === 1
+                  ? { top: '15%', left: '14%', width: '34%', height: '28%' }
+                  : { top: '56%', left: '10%', width: '32%', height: '26%' });
+                return (
+                  <div
+                    key={d.id || idx}
                     style={{
-                      flex: 1,
-                      padding: '12px',
-                      borderRadius: '10px',
-                      border: '1px solid #cbd5e1',
-                      backgroundColor: '#ffffff',
-                      color: '#1e293b',
-                      fontWeight: 700,
-                      fontSize: '0.88rem',
-                      cursor: 'pointer',
-                      display: 'flex',
-                      alignItems: 'center',
-                      justifyContent: 'center',
-                      gap: '6px',
+                      position: 'absolute',
+                      top: box.top,
+                      left: box.left,
+                      width: box.width,
+                      height: box.height,
+                      border: `2px solid ${d.severity === 'Critical' ? '#ef4444' : d.severity === 'Moderate' ? '#f97316' : '#eab308'}`,
+                      borderRadius: '8px',
+                      backgroundColor: 'rgba(239, 68, 68, 0.12)',
+                      boxShadow: '0 0 10px rgba(0,0,0,0.5)',
+                      pointerEvents: 'none',
                     }}
                   >
-                    <RefreshCw size={15} /> Re-scan
-                  </button>
-                  <button
-                    onClick={handleSaveBatch}
-                    style={{
-                      flex: 1,
-                      padding: '12px',
-                      borderRadius: '10px',
-                      border: 'none',
-                      backgroundColor: '#1b7a63',
+                    <span style={{
+                      position: 'absolute',
+                      top: '-10px',
+                      left: '4px',
+                      backgroundColor: d.severity === 'Critical' ? '#dc2626' : d.severity === 'Moderate' ? '#d97706' : '#ca8a04',
                       color: '#ffffff',
-                      fontWeight: 700,
-                      fontSize: '0.88rem',
-                      cursor: 'pointer',
-                      display: 'flex',
-                      alignItems: 'center',
-                      justifyContent: 'center',
-                      gap: '6px',
-                    }}
-                  >
-                    <CheckCircle2 size={16} /> Save Batch
-                  </button>
-                </div>
+                      fontSize: '9.5px',
+                      fontWeight: '800',
+                      padding: '1px 6px',
+                      borderRadius: '4px',
+                      whiteSpace: 'nowrap',
+                    }}>
+                      {d.name} {d.confidence ? `• ${d.confidence}` : ''}
+                    </span>
+                  </div>
+                );
+              })}
+
+              {/* Optical Badge Overlay */}
+              <div style={{
+                position: 'absolute',
+                bottom: '10px',
+                left: '10px',
+                right: '10px',
+                backgroundColor: 'rgba(15, 23, 42, 0.78)',
+                backdropFilter: 'blur(6px)',
+                borderRadius: '8px',
+                padding: '6px 10px',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'space-between',
+                fontSize: '11.5px',
+              }}>
+                <span style={{ color: '#5eead4', fontWeight: '700', display: 'flex', alignItems: 'center', gap: '5px' }}>
+                  <ShieldCheck size={14} /> AI Optical Sensor Verified
+                </span>
+                <span style={{ color: '#cbd5e1' }}>
+                  {selectedInspection.defects === 0 ? '0 Flaws Detected' : `${selectedInspection.defects} Flaws Found`}
+                </span>
               </div>
-            ) : null}
+            </div>
+
+            {/* 4. AI Explanation & Quality Assessment Summary */}
+            <div style={{
+              backgroundColor: '#1e2638',
+              borderRadius: '16px',
+              padding: '14px',
+              border: '1px solid rgba(255, 255, 255, 0.08)',
+              display: 'flex',
+              flexDirection: 'column',
+              gap: '10px',
+            }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '6px', color: '#5eead4', fontSize: '13px', fontWeight: '800' }}>
+                <Sparkles size={16} />
+                <span>AI Optical Diagnostics</span>
+              </div>
+              <p style={{ fontSize: '13px', color: '#e2e8f0', margin: 0, lineHeight: 1.5 }}>
+                {selectedInspection.aiExplanation || selectedInspection.overallSummary || 'Batch surface inspected under multi-spectrum lighting. Weave tension and fiber consistency conforms to benchmark quality.'}
+              </p>
+
+              {selectedInspection.recommendedAction && (
+                <div style={{
+                  padding: '10px 12px',
+                  borderRadius: '10px',
+                  backgroundColor: 'rgba(27, 122, 99, 0.15)',
+                  border: '1px solid rgba(27, 122, 99, 0.3)',
+                  fontSize: '12.5px',
+                  color: '#99f6e4',
+                  lineHeight: 1.45,
+                }}>
+                  <strong style={{ color: '#ffffff' }}>Recommended Action: </strong>
+                  {selectedInspection.recommendedAction}
+                </div>
+              )}
+            </div>
+
+            {/* 5. Defects Breakdown List / Zero Defects Hero */}
+            <div>
+              <div style={{ fontSize: '13.5px', fontWeight: '800', color: '#ffffff', marginBottom: '8px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                <span>Flaw Breakdown ({selectedInspection.defects || 0})</span>
+                <span style={{ fontSize: '11px', color: '#94a3b8' }}>Tap to view remedy</span>
+              </div>
+
+              {selectedInspection.defects === 0 || !Array.isArray(selectedInspection.defectsList) || selectedInspection.defectsList.length === 0 ? (
+                <div style={{
+                  backgroundColor: '#1e2638',
+                  borderRadius: '16px',
+                  padding: '16px',
+                  textAlign: 'center',
+                  border: '1px solid rgba(22, 163, 74, 0.3)',
+                  display: 'flex',
+                  flexDirection: 'column',
+                  alignItems: 'center',
+                  gap: '6px',
+                }}>
+                  <CheckCircle2 size={32} color="#4ade80" />
+                  <div style={{ fontSize: '14px', fontWeight: '800', color: '#ffffff' }}>Zero Defects Detected</div>
+                  <div style={{ fontSize: '12px', color: '#94a3b8', lineHeight: 1.4 }}>
+                    Weave passed all structural, warp, and weft integrity checks. 100% ready for export processing.
+                  </div>
+                </div>
+              ) : (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                  {selectedInspection.defectsList.map((defect, dIdx) => {
+                    const defectKey = defect.id || dIdx;
+                    const isExpanded = !!expandedDetailDefects[defectKey];
+                    return (
+                      <div
+                        key={defectKey}
+                        style={{
+                          backgroundColor: '#1e2638',
+                          borderRadius: '12px',
+                          border: '1px solid rgba(255, 255, 255, 0.08)',
+                          overflow: 'hidden',
+                          transition: 'all 0.2s ease',
+                        }}
+                      >
+                        <div
+                          onClick={() => toggleDetailDefectAccordion(defectKey)}
+                          style={{
+                            padding: '12px 14px',
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'space-between',
+                            cursor: 'pointer',
+                          }}
+                        >
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                            <div style={{
+                              width: '8px',
+                              height: '8px',
+                              borderRadius: '50%',
+                              backgroundColor: defect.severity === 'Critical' ? '#ef4444' : defect.severity === 'Moderate' ? '#f97316' : '#eab308',
+                            }} />
+                            <span style={{ fontSize: '13.5px', fontWeight: '700', color: '#ffffff' }}>
+                              {defect.name}
+                            </span>
+                            <span style={{
+                              fontSize: '10.5px',
+                              fontWeight: '700',
+                              padding: '2px 6px',
+                              borderRadius: '6px',
+                              backgroundColor: defect.severity === 'Critical' ? 'rgba(239, 68, 68, 0.2)' : defect.severity === 'Moderate' ? 'rgba(249, 115, 22, 0.2)' : 'rgba(234, 179, 8, 0.2)',
+                              color: defect.severity === 'Critical' ? '#f87171' : defect.severity === 'Moderate' ? '#fb923c' : '#facc15',
+                            }}>
+                              {defect.severity || 'Moderate'}
+                            </span>
+                          </div>
+
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                            <span style={{ fontSize: '11px', color: '#94a3b8' }}>
+                              {defect.confidence || '92%'}
+                            </span>
+                            {isExpanded ? <ChevronUp size={16} color="#94a3b8" /> : <ChevronDown size={16} color="#94a3b8" />}
+                          </div>
+                        </div>
+
+                        {isExpanded && (
+                          <div style={{
+                            padding: '0 14px 14px 14px',
+                            borderTop: '1px solid rgba(255, 255, 255, 0.06)',
+                            display: 'flex',
+                            flexDirection: 'column',
+                            gap: '8px',
+                            fontSize: '12px',
+                            paddingTop: '10px',
+                          }}>
+                            {defect.whatIsIt && (
+                              <div>
+                                <span style={{ color: '#94a3b8', fontWeight: '700' }}>Description: </span>
+                                <span style={{ color: '#e2e8f0' }}>{defect.whatIsIt}</span>
+                              </div>
+                            )}
+                            {defect.possibleCause && (
+                              <div>
+                                <span style={{ color: '#94a3b8', fontWeight: '700' }}>Probable Cause: </span>
+                                <span style={{ color: '#e2e8f0' }}>{defect.possibleCause}</span>
+                              </div>
+                            )}
+                            {defect.recommendedAction && (
+                              <div>
+                                <span style={{ color: '#5eead4', fontWeight: '700' }}>Corrective Remedy: </span>
+                                <span style={{ color: '#e2e8f0' }}>{defect.recommendedAction}</span>
+                              </div>
+                            )}
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+
+            {/* 6. Export and Download Action Toolbar */}
+            <div style={{
+              display: 'flex',
+              flexDirection: 'column',
+              gap: '8px',
+              paddingTop: '6px',
+              borderTop: '1px solid rgba(255, 255, 255, 0.08)',
+            }}>
+              <button
+                onClick={() => handleDownloadReportPDF(selectedInspection)}
+                style={{
+                  width: '100%',
+                  padding: '12px',
+                  borderRadius: '12px',
+                  border: 'none',
+                  backgroundColor: '#1b7a63',
+                  color: '#ffffff',
+                  fontWeight: '700',
+                  fontSize: '13.5px',
+                  cursor: 'pointer',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  gap: '8px',
+                  boxShadow: '0 4px 14px rgba(27, 122, 99, 0.35)',
+                }}
+              >
+                <Download size={16} /> Download Inspection PDF
+              </button>
+
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '8px' }}>
+                <button
+                  onClick={() => handleExportReportCSV(selectedInspection)}
+                  style={{
+                    padding: '9px 6px',
+                    borderRadius: '10px',
+                    border: '1px solid rgba(255, 255, 255, 0.15)',
+                    backgroundColor: 'rgba(255, 255, 255, 0.05)',
+                    color: '#e2e8f0',
+                    fontSize: '12px',
+                    fontWeight: '700',
+                    cursor: 'pointer',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    gap: '4px',
+                  }}
+                >
+                  <FileText size={13} /> CSV
+                </button>
+
+                <button
+                  onClick={() => handleExportReportJSON(selectedInspection)}
+                  style={{
+                    padding: '9px 6px',
+                    borderRadius: '10px',
+                    border: '1px solid rgba(255, 255, 255, 0.15)',
+                    backgroundColor: 'rgba(255, 255, 255, 0.05)',
+                    color: '#e2e8f0',
+                    fontSize: '12px',
+                    fontWeight: '700',
+                    cursor: 'pointer',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    gap: '4px',
+                  }}
+                >
+                  <FileText size={13} /> JSON
+                </button>
+
+                <button
+                  onClick={() => handleShareReport(selectedInspection)}
+                  style={{
+                    padding: '9px 6px',
+                    borderRadius: '10px',
+                    border: '1px solid rgba(255, 255, 255, 0.15)',
+                    backgroundColor: 'rgba(255, 255, 255, 0.05)',
+                    color: '#e2e8f0',
+                    fontSize: '12px',
+                    fontWeight: '700',
+                    cursor: 'pointer',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    gap: '4px',
+                  }}
+                >
+                  <Share2 size={13} /> Share
+                </button>
+              </div>
+            </div>
+
           </div>
         </div>
       )}

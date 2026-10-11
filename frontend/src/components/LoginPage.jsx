@@ -282,14 +282,11 @@ export function LoginPage({ onLoginSuccess, onBack, theme = 'green' }) {
     setLoginLoading(true);
     try {
       const lowerEmail = email.toLowerCase();
-      const isAdminLogin = isBlue || lowerEmail.includes('admin');
+      const isAdminLogin = isBlue;
 
-      // 1. Check demo / built-in admin credentials
-      if (isAdminLogin) {
-        if (
-          (lowerEmail === 'admin@fabrisense.com' && (pwd === 'Admin@123' || pwd.length >= 6)) ||
-          lowerEmail.includes('admin')
-        ) {
+      // 1. Built-in system administrator verification
+      if (lowerEmail === 'admin@fabrisense.com') {
+        if (pwd === 'Admin@123') {
           const adminProfile = {
             name: 'Rajesh Kumar',
             email: email,
@@ -297,72 +294,85 @@ export function LoginPage({ onLoginSuccess, onBack, theme = 'green' }) {
           };
           onLoginSuccess?.(adminProfile);
           return;
+        } else {
+          throw new Error('Incorrect password. Please verify and try again.');
         }
       }
 
       // 2. Try Supabase Authentication if configured
       let supabaseProfile = null;
+      let isUnverifiedEmail = false;
+
       try {
         const { user } = await signInWithPassword(email, pwd);
         if (user) {
-          supabaseProfile = getProfileFromUser(user);
+          if (user.confirmed_at === null && user.email_confirmed_at === null) {
+            isUnverifiedEmail = true;
+          } else {
+            supabaseProfile = getProfileFromUser(user);
+          }
         }
       } catch (sbErr) {
-        console.warn('Supabase sign-in response:', sbErr?.message);
+        const msg = (sbErr?.message || '').toLowerCase();
+        if (
+          msg.includes('email not confirmed') ||
+          msg.includes('not confirmed') ||
+          msg.includes('unconfirmed') ||
+          msg.includes('not verified')
+        ) {
+          isUnverifiedEmail = true;
+        } else {
+          console.warn('Supabase sign-in response:', sbErr?.message);
+        }
+      }
+
+      if (isUnverifiedEmail) {
+        throw new Error('This account is not verified. Please verify your email before signing in.');
       }
 
       if (supabaseProfile) {
-        if (isBlue) {
+        if (isAdminLogin) {
           supabaseProfile.role = 'Admin';
         }
         onLoginSuccess?.(supabaseProfile);
         return;
       }
 
-      // 3. Check locally registered users (from previous sign-ups)
+      // 3. Check registered users (from signed-up and verified accounts)
       const stored = getStoredUsers();
       const match = stored.find(u => u.email.toLowerCase() === lowerEmail);
       if (match) {
-        if (match.password && match.password !== pwd) {
+        if (match.verified === false) {
+          throw new Error('This account has not been verified. Please complete verification before signing in.');
+        }
+        if (match.password !== pwd) {
           throw new Error('Incorrect password. Please verify and try again.');
         }
         const profile = {
           name: match.name,
           email: match.email,
-          role: isBlue ? 'Admin' : (match.role || 'User'),
+          role: isAdminLogin ? 'Admin' : (match.role || 'User'),
         };
         onLoginSuccess?.(profile);
         return;
       }
 
-      // 4. Standard demo inspector / user accounts
-      const demoUsers = [
-        { email: 'inspector@weavesofindia.com', name: 'Ananthi Kumar', role: 'User' },
-        { email: 'anil.mehta@petrosoft.in', name: 'Anil Mehta', role: 'User' },
-        { email: 'meera.sen@petrosoft.in', name: 'Meera Sen', role: 'User' },
-      ];
-      const demoMatch = demoUsers.find(d => d.email.toLowerCase() === lowerEmail);
-      if (demoMatch && pwd.length >= 6) {
-        onLoginSuccess?.({
-          name: demoMatch.name,
-          email: demoMatch.email,
-          role: isBlue ? 'Admin' : demoMatch.role,
-        });
-        return;
+      // 4. Built-in verified demo inspector account (strictly checks password)
+      if (lowerEmail === 'inspector@weavesofindia.com') {
+        if (pwd === 'User@123') {
+          onLoginSuccess?.({
+            name: 'Ananthi Kumar',
+            email: lowerEmail,
+            role: isAdminLogin ? 'Admin' : 'User',
+          });
+          return;
+        } else {
+          throw new Error('Incorrect password. Please verify and try again.');
+        }
       }
 
-      // 5. Standard fallback for any valid credentials with length >= 6
-      if (pwd.length >= 6) {
-        const fallbackProfile = {
-          name: email.split('@')[0].replace(/[._-]/g, ' ').replace(/\b\w/g, c => c.toUpperCase()) || 'User',
-          email,
-          role: isBlue ? 'Admin' : 'User',
-        };
-        onLoginSuccess?.(fallbackProfile);
-        return;
-      }
-
-      throw new Error('Sign in failed. Password must be at least 6 characters.');
+      // 5. Account does not exist — strictly reject unverified / non-registered users
+      throw new Error('No registered account found with this email. Only signed-up accounts can sign in. Please sign up first.');
     } catch (err) {
       setLoginErr(err.message || 'Sign in failed. Please try again.');
     } finally {
@@ -370,7 +380,7 @@ export function LoginPage({ onLoginSuccess, onBack, theme = 'green' }) {
     }
   };
 
-  // ── REGISTER — Step 1: create account and enter next page ──────────────
+  // ── REGISTER — Step 1: create account and request verification ──────────
   const handleRegister = async (e) => {
     e.preventDefault();
     setRegErr('');
@@ -387,47 +397,68 @@ export function LoginPage({ onLoginSuccess, onBack, theme = 'green' }) {
     if (pwd.length < 8)           { setRegErr('Password must be at least 8 characters.'); return; }
     if (pwd !== conf)             { setRegErr('Passwords do not match.'); return; }
 
+    // Check if account is already registered locally
+    const stored = getStoredUsers();
+    const existing = stored.find(u => u.email.toLowerCase() === email.toLowerCase());
+    if (existing && existing.verified !== false) {
+      setRegErr('An account with this email already exists. Please sign in.');
+      return;
+    }
+
     setRegLoading(true);
     try {
       const userRole = isBlue ? 'Admin' : 'User';
-      // Save locally to ensure user can sign in anytime
-      storeUser({ name, email, password: pwd, role: userRole });
 
       // Attempt Supabase sign up
-      let hasSupabaseSession = false;
+      let supabaseSessionUser = null;
+
       try {
         const { user, session } = await signUpWithPassword(email, pwd, name);
         if (session && user) {
-          hasSupabaseSession = true;
-          const profile = getProfileFromUser(user);
-          if (isBlue) profile.role = 'Admin';
-          setRegSuccess('Account created successfully! Entering dashboard…');
-          setTimeout(() => {
-            onLoginSuccess?.(profile);
-          }, 350);
-          return;
-        }
-
-        if (user && !session) {
-          // Supabase signup succeeded and requires OTP confirmation
-          setPendingRegUser({ name, email, pwd });
+          // Immediately confirmed and logged in by Supabase session
+          supabaseSessionUser = user;
+        } else if (user && !session) {
+          // Supabase signup requires OTP email verification
+          setPendingRegUser({ name, email, pwd, role: userRole, supabaseMode: true });
           setRegOtpCooldown(60);
           setRegStep('otp');
           setRegOtp('');
-          setRegSuccess(`Verification code sent to ${email}.`);
+          setRegSuccess(`Verification code sent to ${email}. Please enter the code to verify your account.`);
           return;
         }
       } catch (sbErr) {
-        console.warn('Supabase sign-up note, proceeding with immediate account setup:', sbErr.message);
+        console.warn('Supabase sign-up note:', sbErr?.message);
+        if (sbErr?.message?.toLowerCase().includes('already registered')) {
+          throw new Error('An account with this email already exists. Please sign in.');
+        }
       }
 
-      // If Supabase encountered database error, rate limit, or offline:
-      // proceed directly into the dashboard so user is NEVER blocked!
-      const profile = { name, email, role: userRole };
-      setRegSuccess('Account created successfully! Entering dashboard…');
-      setTimeout(() => {
-        onLoginSuccess?.(profile);
-      }, 400);
+      if (supabaseSessionUser) {
+        const profile = getProfileFromUser(supabaseSessionUser);
+        if (isBlue) profile.role = 'Admin';
+        storeUser({ name, email, password: pwd, role: userRole, verified: true });
+        setRegSuccess('Account created and verified! Entering dashboard…');
+        setTimeout(() => {
+          onLoginSuccess?.(profile);
+        }, 350);
+        return;
+      }
+
+      // If Supabase requires offline verification or is rate limited:
+      // Require entering 6-digit OTP code before the account is activated
+      const verificationCode = Math.floor(100000 + Math.random() * 900000).toString();
+      setPendingRegUser({
+        name,
+        email,
+        pwd,
+        role: userRole,
+        localOtp: verificationCode,
+        supabaseMode: false,
+      });
+      setRegOtpCooldown(60);
+      setRegStep('otp');
+      setRegOtp('');
+      setRegSuccess(`Verification code sent to ${email}. (Verification code: ${verificationCode})`);
     } catch (err) {
       setRegErr(err.message || 'Failed to create account. Please try again.');
     } finally {
@@ -439,31 +470,67 @@ export function LoginPage({ onLoginSuccess, onBack, theme = 'green' }) {
   const handleRegVerifyOtp = async (e) => {
     e.preventDefault();
     setRegErr('');
+
+    if (!regOtp || regOtp.length !== 6) {
+      setRegErr('Please enter the complete 6-digit verification code.');
+      return;
+    }
+
     setRegOtpLoading(true);
     try {
+      let isVerified = false;
       let profile = null;
-      try {
-        const { user, session } = await verifySignupOtp(pendingRegUser?.email, regOtp);
-        if (user) {
-          profile = getProfileFromUser(user);
-          if (isBlue) profile.role = 'Admin';
+
+      if (pendingRegUser?.supabaseMode) {
+        try {
+          const { user } = await verifySignupOtp(pendingRegUser?.email, regOtp);
+          if (user) {
+            isVerified = true;
+            profile = getProfileFromUser(user);
+            if (isBlue) profile.role = 'Admin';
+          }
+        } catch (err) {
+          console.warn('Supabase OTP verification notice:', err.message);
+          // Check if matches local OTP backup if any
+          if (pendingRegUser?.localOtp && regOtp === pendingRegUser.localOtp) {
+            isVerified = true;
+          } else {
+            throw new Error(err.message || 'Invalid verification code. Please check and try again.');
+          }
         }
-      } catch (err) {
-        console.warn('Supabase OTP verification notice:', err.message);
+      } else {
+        if (pendingRegUser?.localOtp && regOtp === pendingRegUser.localOtp) {
+          isVerified = true;
+        } else {
+          throw new Error('Invalid verification code. Please check and try again.');
+        }
       }
 
-      if (!profile && pendingRegUser) {
+      if (!isVerified) {
+        throw new Error('Verification failed. Invalid code entered.');
+      }
+
+      // Store the verified account now that verification succeeded
+      storeUser({
+        name: pendingRegUser.name,
+        email: pendingRegUser.email,
+        password: pendingRegUser.pwd,
+        role: pendingRegUser.role,
+        verified: true,
+      });
+
+      if (!profile) {
         profile = {
           name: pendingRegUser.name,
           email: pendingRegUser.email,
-          role: isBlue ? 'Admin' : 'User',
+          role: pendingRegUser.role,
         };
       }
 
-      setRegSuccess('Account verified! Entering dashboard…');
+      setRegSuccess('Account verified successfully! Entering dashboard…');
       setTimeout(() => {
         onLoginSuccess?.(profile);
-      }, 350);
+      }, 400);
     } catch (err) {
       setRegErr(err.message || 'Verification failed. Please try again.');
     } finally {
@@ -471,15 +538,26 @@ export function LoginPage({ onLoginSuccess, onBack, theme = 'green' }) {
     }
   };
 
-
   const handleRegResendOtp = async () => {
     setRegErr('');
     setRegSuccess('');
     try {
-      await resendSignupOtp(pendingRegUser?.email);
+      if (pendingRegUser?.supabaseMode) {
+        try {
+          await resendSignupOtp(pendingRegUser?.email);
+          setRegOtpCooldown(60);
+          setRegOtp('');
+          setRegSuccess('A new verification code has been sent to your email.');
+          return;
+        } catch (err) {
+          console.warn('Supabase resend note:', err.message);
+        }
+      }
+      const newCode = Math.floor(100000 + Math.random() * 900000).toString();
+      setPendingRegUser(prev => ({ ...prev, localOtp: newCode }));
       setRegOtpCooldown(60);
       setRegOtp('');
-      setRegSuccess('A new verification code has been sent.');
+      setRegSuccess(`A new verification code has been sent to ${pendingRegUser?.email}. (Verification code: ${newCode})`);
     } catch (err) {
       setRegErr(err.message || 'Could not resend code. Please wait and try again.');
     }
@@ -550,6 +628,13 @@ export function LoginPage({ onLoginSuccess, onBack, theme = 'green' }) {
     try {
       await updatePassword(newPwd);
       await signOut();
+
+      // Keep local registered user's password in sync
+      const stored = getStoredUsers();
+      const existing = stored.find(u => u.email.toLowerCase() === forgotEmail.trim().toLowerCase());
+      if (existing) {
+        storeUser({ ...existing, password: newPwd, verified: true });
+      }
 
       setForgotSuccess('Password updated! You can now sign in with your new password.');
       setLoginEmail(forgotEmail.trim());

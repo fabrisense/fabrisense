@@ -2,13 +2,13 @@ import React, { useState } from 'react';
 import {
   ArrowLeft, CheckCircle2, AlertTriangle, ShieldCheck, Download,
   Share2, FileText, Check, ChevronDown, ChevronUp, Copy,
-  Printer, X, Eye, FileSpreadsheet, Code, ImageOff, RefreshCw
+  Printer, X, Eye, FileSpreadsheet, Code, ImageOff, RefreshCw, History
 } from 'lucide-react';
 import confetti from 'canvas-confetti';
 import jsPDF from 'jspdf';
 import defaultFabricImage from '../assets/indigo_denim.jpg';
 
-const DEFECT_DATA = {
+export const DEFECT_DATA = {
   reportId: 'INS-2024-0047',
   timestamp: 'Sep 5, 2024 • 10:32 AM',
   fabricType: 'Handloom Cotton-Silk Blend',
@@ -265,12 +265,19 @@ export function InspectionResultFlow({
     setSavedSuccess(true);
     if (onSaveBatch) {
       onSaveBatch({
-        id: Date.now(),
+        id: DEFECT_DATA.reportId,
         title: DEFECT_DATA.fabricType,
-        time: 'Today • 3 defects found',
+        fabricType: DEFECT_DATA.fabricType,
+        time: `Today • ${DEFECT_DATA.totalDefects} defects found`,
         grade: DEFECT_DATA.grade,
         defects: DEFECT_DATA.totalDefects,
         defectsList: DEFECT_DATA.defects,
+        aiExplanation: DEFECT_DATA.aiExplanation,
+        gradeExplanation: DEFECT_DATA.gradeExplanation,
+        severityScale: DEFECT_DATA.severityScale,
+        mainIssues: DEFECT_DATA.mainIssues,
+        recommendedAction: 'Flag roll section for cutting or mend with micro-stitching if permitted.',
+        image: capturedImage || defaultFabricImage,
         type: 'silk',
       });
     }
@@ -338,11 +345,19 @@ export function InspectionResultFlow({
                 } catch {}
                 if (onSaveBatch) {
                   onSaveBatch({
-                    id: Date.now(),
-                    title: 'Fabric Sample',
+                    id: `INS-${new Date().getFullYear()}-${Math.floor(1000 + Math.random() * 9000)}`,
+                    title: 'Pure Silk Sample',
+                    fabricType: 'Pure Silk Weave',
                     time: 'Today • No defects',
                     grade: 'GRADE A',
                     defects: 0,
+                    defectsList: [],
+                    aiExplanation: 'Fabric surface inspected under multi-spectrum lighting. Warp and weft threads exhibit zero flaws, uniform tension, and zero blemishes.',
+                    gradeExplanation: 'Fabric passed zero-defect benchmark with exceptional weave integrity.',
+                    severityScale: 'None',
+                    mainIssues: 'None detected',
+                    recommendedAction: 'Batch approved for production & premium export certification.',
+                    image: capturedImage || defaultFabricImage,
                     type: 'clean',
                   });
                 }
@@ -836,6 +851,28 @@ export function InspectionResultFlow({
               }}
             >
               <Download size={15} /> Save in More Formats (CSV, JSON, Print)
+            </button>
+
+            {/* View in History Button */}
+            <button
+              onClick={() => {
+                handleSaveReportAction();
+              }}
+              style={{
+                ...secondaryWhiteBtnStyle,
+                padding: '10px',
+                fontSize: '13px',
+                color: '#1b7a63',
+                borderColor: 'rgba(27,122,99,0.3)',
+                backgroundColor: '#f0fdf4',
+                fontWeight: '700',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                gap: '6px',
+              }}
+            >
+              <History size={15} color="#1b7a63" /> Go to Inspection History
             </button>
           </div>
         </div>
