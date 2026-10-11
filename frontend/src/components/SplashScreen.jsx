@@ -1,20 +1,26 @@
 import React, { useEffect, useState } from 'react';
+import logoImg from '../assets/logo.jpg';
 
 export function SplashScreen({ onFinish }) {
-  const [fadeOut, setFadeOut] = useState(false);
+  const [phase, setPhase] = useState('idle'); // idle → pulse → fadeout
 
   useEffect(() => {
-    // Keep splash page visible for 1.5 seconds (1500ms), then start fade out
-    const timer = setTimeout(() => {
-      setFadeOut(true);
-      // Allow fade-out transition (300ms) to complete before triggering onFinish
+    // Start subtle pulse animation immediately
+    const pulseTimer = setTimeout(() => setPhase('pulse'), 100);
+
+    // Begin fade-out after 2.2 seconds
+    const fadeTimer = setTimeout(() => {
+      setPhase('fadeout');
       const finishTimer = setTimeout(() => {
         if (onFinish) onFinish();
-      }, 300);
+      }, 600);
       return () => clearTimeout(finishTimer);
-    }, 1500);
+    }, 2200);
 
-    return () => clearTimeout(timer);
+    return () => {
+      clearTimeout(pulseTimer);
+      clearTimeout(fadeTimer);
+    };
   }, [onFinish]);
 
   return (
@@ -27,188 +33,129 @@ export function SplashScreen({ onFinish }) {
         flexDirection: 'column',
         alignItems: 'center',
         justifyContent: 'center',
-        backgroundColor: '#eae5d9',
+        backgroundColor: '#000000',
         fontFamily: "'Plus Jakarta Sans', system-ui, -apple-system, sans-serif",
         overflow: 'hidden',
-        opacity: fadeOut ? 0 : 1,
-        transition: 'opacity 0.3s ease-out',
-        pointerEvents: fadeOut ? 'none' : 'auto',
+        opacity: phase === 'fadeout' ? 0 : 1,
+        transition: 'opacity 0.6s ease-out',
+        pointerEvents: phase === 'fadeout' ? 'none' : 'auto',
       }}
     >
-      {/* Mobile Phone Container Frame */}
+      {/* Subtle radial glow behind logo */}
       <div
         style={{
-          width: '100%',
-          maxWidth: '430px',
-          height: '100%',
-          minHeight: '100vh',
+          position: 'absolute',
+          width: '320px',
+          height: '320px',
+          borderRadius: '50%',
+          background:
+            'radial-gradient(circle, rgba(220,220,220,0.08) 0%, transparent 70%)',
+          pointerEvents: 'none',
+        }}
+      />
+
+      {/* Center Content */}
+      <div
+        style={{
           display: 'flex',
           flexDirection: 'column',
           alignItems: 'center',
           justifyContent: 'center',
-          backgroundColor: '#f7f4eb',
-          position: 'relative',
-          overflow: 'hidden',
-          boxSizing: 'border-box',
-          boxShadow: '0 0 40px rgba(0, 0, 0, 0.08)',
-          userSelect: 'none',
+          textAlign: 'center',
+          zIndex: 2,
+          gap: 0,
         }}
       >
-        {/* Top-Left Woven Fabric Corner Texture Accent */}
-        <svg
-          style={{
-            position: 'absolute',
-            top: 0,
-            left: 0,
-            width: '180px',
-            height: '180px',
-            pointerEvents: 'none',
-            opacity: 0.65,
-          }}
-          viewBox="0 0 180 180"
-          fill="none"
-          xmlns="http://www.w3.org/2000/svg"
-        >
-          <path
-            d="M 0 0 L 180 0 C 130 30 50 50 0 180 Z"
-            fill="#eae3d2"
-          />
-          <path
-            d="M 0 0 L 140 0 C 100 25 35 40 0 140 Z"
-            fill="#ded5bf"
-            opacity="0.5"
-          />
-          <path d="M 0 20 Q 80 40 160 0" stroke="#c8beaa" strokeWidth="1" opacity="0.6" strokeDasharray="3,3" />
-          <path d="M 0 50 Q 60 70 120 0" stroke="#c8beaa" strokeWidth="1" opacity="0.6" strokeDasharray="3,3" />
-          <path d="M 0 80 Q 40 90 90 0" stroke="#c8beaa" strokeWidth="1" opacity="0.6" strokeDasharray="3,3" />
-        </svg>
-
-        {/* Bottom-Right Woven Fabric Corner Texture Accent */}
-        <svg
-          style={{
-            position: 'absolute',
-            bottom: 0,
-            right: 0,
-            width: '200px',
-            height: '200px',
-            pointerEvents: 'none',
-            opacity: 0.65,
-          }}
-          viewBox="0 0 200 200"
-          fill="none"
-          xmlns="http://www.w3.org/2000/svg"
-        >
-          <path
-            d="M 200 200 L 20 200 C 60 150 140 120 200 0 Z"
-            fill="#eae3d2"
-          />
-          <path
-            d="M 200 200 L 60 200 C 90 160 160 140 200 40 Z"
-            fill="#ded5bf"
-            opacity="0.5"
-          />
-          <path d="M 40 200 Q 110 140 200 40" stroke="#c8beaa" strokeWidth="1" opacity="0.6" strokeDasharray="3,3" />
-          <path d="M 80 200 Q 140 160 200 80" stroke="#c8beaa" strokeWidth="1" opacity="0.6" strokeDasharray="3,3" />
-          <path d="M 120 200 Q 170 180 200 120" stroke="#c8beaa" strokeWidth="1" opacity="0.6" strokeDasharray="3,3" />
-        </svg>
-
-        {/* Center Main Content Group */}
+        {/* Logo Image */}
         <div
           style={{
-            display: 'flex',
-            flexDirection: 'column',
-            alignItems: 'center',
-            justifyContent: 'center',
-            textAlign: 'center',
-            padding: '0 24px',
-            zIndex: 2,
+            width: '150px',
+            height: '150px',
+            borderRadius: '32px',
+            overflow: 'hidden',
+            marginBottom: '28px',
+            transform: phase === 'pulse' ? 'scale(1.04)' : 'scale(1)',
+            transition: 'transform 0.8s ease-in-out',
+            boxShadow:
+              phase === 'pulse'
+                ? '0 0 60px rgba(255,255,255,0.12), 0 0 120px rgba(255,255,255,0.04)'
+                : '0 0 0px rgba(255,255,255,0)',
           }}
         >
-          {/* Rounded Teal Icon Box */}
+          <img
+            src={logoImg}
+            alt="FabriSense Logo"
+            style={{
+              width: '100%',
+              height: '100%',
+              objectFit: 'cover',
+              display: 'block',
+            }}
+            draggable={false}
+          />
+        </div>
+
+        {/* Brand Title */}
+        <h1
+          style={{
+            fontSize: '2.2rem',
+            fontWeight: '800',
+            color: '#ffffff',
+            margin: '0 0 8px 0',
+            letterSpacing: '-0.02em',
+            fontFamily: "'Plus Jakarta Sans', sans-serif",
+            opacity: phase === 'pulse' || phase === 'fadeout' ? 1 : 0,
+            transform:
+              phase === 'pulse' || phase === 'fadeout'
+                ? 'translateY(0)'
+                : 'translateY(10px)',
+            transition: 'opacity 0.6s ease 0.3s, transform 0.6s ease 0.3s',
+          }}
+        >
+          FabriSense
+        </h1>
+
+        {/* Subtitle */}
+        <p
+          style={{
+            fontSize: '0.68rem',
+            fontWeight: '600',
+            color: 'rgba(255,255,255,0.45)',
+            letterSpacing: '0.18em',
+            textTransform: 'uppercase',
+            margin: '0 0 40px 0',
+            opacity: phase === 'pulse' || phase === 'fadeout' ? 1 : 0,
+            transform:
+              phase === 'pulse' || phase === 'fadeout'
+                ? 'translateY(0)'
+                : 'translateY(10px)',
+            transition: 'opacity 0.6s ease 0.45s, transform 0.6s ease 0.45s',
+          }}
+        >
+          AI-POWERED FABRIC QUALITY INSPECTION
+        </p>
+
+        {/* Loading bar */}
+        <div
+          style={{
+            width: '48px',
+            height: '2px',
+            backgroundColor: 'rgba(255,255,255,0.12)',
+            borderRadius: '2px',
+            overflow: 'hidden',
+            opacity: phase === 'pulse' || phase === 'fadeout' ? 1 : 0,
+            transition: 'opacity 0.4s ease 0.6s',
+          }}
+        >
           <div
             style={{
-              width: '84px',
-              height: '84px',
-              borderRadius: '24px',
-              backgroundColor: '#088365',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              boxShadow: '0 10px 25px rgba(8, 131, 101, 0.22)',
-              marginBottom: '22px',
+              height: '100%',
+              width: phase === 'pulse' ? '100%' : '0%',
+              background: 'linear-gradient(90deg, #e0e0e0, #ffffff)',
+              borderRadius: '2px',
+              transition: 'width 1.8s ease-out 0.3s',
             }}
-          >
-            {/* White 3x3 Grid Matrix Icon */}
-            <svg width="42" height="42" viewBox="0 0 42 42" fill="none" xmlns="http://www.w3.org/2000/svg">
-              <rect x="4" y="4" width="9.5" height="9.5" rx="2.5" fill="white" />
-              <rect x="16.25" y="4" width="9.5" height="9.5" rx="2.5" fill="white" />
-              <rect x="28.5" y="4" width="9.5" height="9.5" rx="2.5" fill="white" />
-              <rect x="4" y="16.25" width="9.5" height="9.5" rx="2.5" fill="white" />
-              <rect x="16.25" y="16.25" width="9.5" height="9.5" rx="2.5" fill="white" />
-              <rect x="28.5" y="16.25" width="9.5" height="9.5" rx="2.5" fill="white" />
-              <rect x="4" y="28.5" width="9.5" height="9.5" rx="2.5" fill="white" />
-              <rect x="16.25" y="28.5" width="9.5" height="9.5" rx="2.5" fill="white" />
-              <rect x="28.5" y="28.5" width="9.5" height="9.5" rx="2.5" fill="white" />
-            </svg>
-          </div>
-
-          {/* Brand Title */}
-          <h1
-            style={{
-              fontSize: '2.25rem',
-              fontWeight: '800',
-              color: '#0b1a30',
-              margin: '0 0 12px 0',
-              letterSpacing: '-0.02em',
-              fontFamily: "'Plus Jakarta Sans', sans-serif",
-            }}
-          >
-            FabriSense
-          </h1>
-
-          {/* Subtitle */}
-          <p
-            style={{
-              fontSize: '0.74rem',
-              fontWeight: '700',
-              color: '#4a6175',
-              letterSpacing: '0.12em',
-              textTransform: 'uppercase',
-              margin: '0 0 32px 0',
-              maxWidth: '280px',
-              lineHeight: 1.4,
-            }}
-          >
-            AI-POWERED FABRIC QUALITY INSPECTION
-          </p>
-
-          {/* 3 Pagination / Loading Indicator Dots */}
-          <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-            <div
-              style={{
-                width: '9px',
-                height: '9px',
-                borderRadius: '50%',
-                backgroundColor: '#9ecfc2',
-              }}
-            />
-            <div
-              style={{
-                width: '9px',
-                height: '9px',
-                borderRadius: '50%',
-                backgroundColor: '#088365',
-              }}
-            />
-            <div
-              style={{
-                width: '9px',
-                height: '9px',
-                borderRadius: '50%',
-                backgroundColor: '#9ecfc2',
-              }}
-            />
-          </div>
+          />
         </div>
       </div>
     </div>

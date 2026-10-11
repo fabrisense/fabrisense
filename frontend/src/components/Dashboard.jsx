@@ -3,7 +3,8 @@ import {
   Scan, Home, History, User, LogOut,
   CheckCircle2, X, ShieldCheck, Layers, ArrowLeft,
   Camera, Upload, RefreshCw, CheckCircle, AlertCircle,
-  Settings, Bell, Globe, HelpCircle, Info, ChevronRight
+  Settings, Bell, Globe, HelpCircle, Info, ChevronRight,
+  Edit3, Check, Phone, Mail, Building, Sparkles
 } from 'lucide-react';
 import { InspectionResultFlow } from './InspectionResultFlow';
 import kanchipuramSilk from '../assets/kanchipuram_silk.jpg';
@@ -45,10 +46,123 @@ export function Dashboard({ userData = {}, onLogout }) {
     try {
       const saved = localStorage.getItem('fabrisense_inspections');
       return saved ? JSON.parse(saved) : [];
-    } catch {
+    } catch (e) {
       return [];
     }
   });
+
+  // ── Profile State & Settings Modals ──
+  const [profileUser, setProfileUser] = useState(() => {
+    let storedAvatar = null;
+    try { storedAvatar = localStorage.getItem('fabrisense_profile_avatar'); } catch (e) {}
+    return {
+      name: userData?.name || 'Rajesh Kumar',
+      email: userData?.email || 'rajesh@textileco.com',
+      phone: userData?.phone || '+91 98765 43210',
+      company: userData?.company || 'Textile Co. Manufacturing',
+      avatar: storedAvatar || userData?.avatar || null,
+      language: 'English (US)',
+      notifications: {
+        push: true,
+        email: true,
+        defects: true,
+        reports: false,
+      }
+    };
+  });
+
+  const avatarInputRef = useRef(null);
+
+  // Keep profile synchronized with login / account creation user session
+  useEffect(() => {
+    if (userData?.name || userData?.email) {
+      setProfileUser(prev => ({
+        ...prev,
+        name: userData.name || prev.name,
+        email: userData.email || prev.email,
+      }));
+    }
+  }, [userData]);
+
+  const [activeProfileModal, setActiveProfileModal] = useState(null); // null | 'account' | 'notifications' | 'language' | 'help' | 'about'
+  const [editForm, setEditForm] = useState({ name: '', email: '', phone: '', company: '' });
+  const [toastMessage, setToastMessage] = useState(null);
+
+  const showToast = (msg) => {
+    setToastMessage(msg);
+    setTimeout(() => setToastMessage(null), 3000);
+  };
+
+  const handleAvatarFileChange = (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = () => {
+      const dataUrl = reader.result;
+      setProfileUser(prev => {
+        const updated = { ...prev, avatar: dataUrl };
+        try { localStorage.setItem('fabrisense_profile_avatar', dataUrl); } catch (err) {}
+        return updated;
+      });
+      showToast('Profile picture updated successfully!');
+    };
+    reader.readAsDataURL(file);
+    e.target.value = '';
+  };
+
+  const handleRemoveAvatar = () => {
+    setProfileUser(prev => {
+      const updated = { ...prev, avatar: null };
+      try { localStorage.removeItem('fabrisense_profile_avatar'); } catch (err) {}
+      return updated;
+    });
+    showToast('Profile picture reset to contact logo');
+  };
+
+  const openAccountModal = () => {
+    setEditForm({
+      name: profileUser.name,
+      email: profileUser.email,
+      phone: profileUser.phone,
+      company: profileUser.company,
+    });
+    setActiveProfileModal('account');
+  };
+
+  const handleSaveAccount = (e) => {
+    e?.preventDefault();
+    if (!editForm.name.trim() || !editForm.email.trim()) return;
+    setProfileUser(prev => ({
+      ...prev,
+      name: editForm.name.trim(),
+      email: editForm.email.trim(),
+      phone: editForm.phone.trim() || prev.phone,
+      company: editForm.company.trim() || prev.company,
+    }));
+    setActiveProfileModal(null);
+    showToast('Account settings updated successfully!');
+  };
+
+  const handleToggleNotification = (key) => {
+    setProfileUser(prev => ({
+      ...prev,
+      notifications: {
+        ...prev.notifications,
+        [key]: !prev.notifications[key],
+      }
+    }));
+  };
+
+  const handleSaveNotifications = () => {
+    setActiveProfileModal(null);
+    showToast('Notification preferences saved!');
+  };
+
+  const handleSelectLanguage = (lang) => {
+    setProfileUser(prev => ({ ...prev, language: lang }));
+    setActiveProfileModal(null);
+    showToast(`Language set to ${lang}`);
+  };
 
   // ── Live Camera Management ──
   const stopLiveCamera = () => {
@@ -756,31 +870,99 @@ export function Dashboard({ userData = {}, onLogout }) {
         {activeTab === 'profile' && (
           <div style={profilePageStyle}>
 
-            {/* ── Dark Navy Header Card ── */}
-            <div style={profileHeaderCardStyle}>
-              {/* Avatar: placeholder logo — user adds photo via Account Settings */}
-              <div style={profileAvatarCircleStyle}>
-                <User size={42} color="#ffffff" strokeWidth={2} />
+            {/* ── Toast Notification Banner ── */}
+            {toastMessage && (
+              <div style={profileToastStyle}>
+                <CheckCircle size={16} color="#10b981" />
+                <span>{toastMessage}</span>
               </div>
-              <div style={profileNameStyle}>{displayName}</div>
-              <div style={profileEmailStyle}>{displayEmail}</div>
+            )}
+
+            {/* Hidden Profile Avatar File Picker */}
+            <input
+              type="file"
+              ref={avatarInputRef}
+              accept="image/*"
+              style={{ display: 'none' }}
+              onChange={handleAvatarFileChange}
+            />
+
+            {/* ── Dark Navy Header Card with Contact Logo / Custom Profile Pic ── */}
+            <div style={profileHeaderCardStyle}>
+              {/* Avatar circle: contact logo icon by default, or user custom photo */}
+              <div
+                onClick={() => avatarInputRef.current?.click()}
+                title="Click to update profile picture"
+                style={{
+                  position: 'relative',
+                  width: '84px',
+                  height: '84px',
+                  borderRadius: '50%',
+                  background: profileUser.avatar ? 'none' : 'linear-gradient(135deg, #1b7a63 0%, #0d9488 100%)',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  marginBottom: '12px',
+                  border: '3px solid rgba(255,255,255,0.25)',
+                  boxShadow: '0 6px 20px rgba(0,0,0,0.3)',
+                  cursor: 'pointer',
+                  overflow: 'hidden'
+                }}
+              >
+                {profileUser.avatar ? (
+                  <img src={profileUser.avatar} alt="Profile" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                ) : (
+                  <User size={40} color="#ffffff" strokeWidth={2} />
+                )}
+                <div style={{
+                  position: 'absolute',
+                  bottom: 0,
+                  left: 0,
+                  right: 0,
+                  backgroundColor: 'rgba(15, 23, 42, 0.65)',
+                  padding: '3px 0',
+                  display: 'flex',
+                  justifyContent: 'center'
+                }}>
+                  <Camera size={12} color="#ffffff" />
+                </div>
+              </div>
+
+              <div style={profileNameStyle}>{profileUser.name}</div>
+              <div style={profileEmailStyle}>{profileUser.email}</div>
+              <button
+                onClick={openAccountModal}
+                style={profileEditPillBtnStyle}
+              >
+                <Edit3 size={13} style={{ marginRight: '4px' }} /> Edit Profile
+              </button>
             </div>
 
             {/* ── Menu List Card ── */}
             <div style={profileMenuCardStyle}>
               {[
-                { icon: <Settings size={20} color="#334155" strokeWidth={2} />, label: 'Account Settings' },
-                { icon: <Bell    size={20} color="#334155" strokeWidth={2} />, label: 'Notifications'    },
-                { icon: <Globe   size={20} color="#334155" strokeWidth={2} />, label: 'Language'         },
-                { icon: <HelpCircle size={20} color="#334155" strokeWidth={2} />, label: 'Help & Support' },
-                { icon: <Info    size={20} color="#334155" strokeWidth={2} />, label: 'About FabriSense', last: true },
-              ].map(({ icon, label, last }) => (
-                <div key={label} style={{ ...profileMenuRowStyle, borderBottom: last ? 'none' : '1px solid #f1f5f9' }}>
+                { icon: <Settings size={20} color="#334155" strokeWidth={2} />, label: 'Account Settings', key: 'account' },
+                { icon: <Bell    size={20} color="#334155" strokeWidth={2} />, label: 'Notifications',    key: 'notifications' },
+                { icon: <Globe   size={20} color="#334155" strokeWidth={2} />, label: 'Language',         key: 'language', badge: profileUser.language },
+                { icon: <HelpCircle size={20} color="#334155" strokeWidth={2} />, label: 'Help & Support', key: 'help' },
+                { icon: <Info    size={20} color="#334155" strokeWidth={2} />, label: 'About FabriSense', key: 'about', last: true },
+              ].map(({ icon, label, key, badge, last }) => (
+                <div
+                  key={label}
+                  onClick={() => {
+                    if (key === 'account') openAccountModal();
+                    else setActiveProfileModal(key);
+                  }}
+                  style={{ ...profileMenuRowStyle, borderBottom: last ? 'none' : '1px solid #f1f5f9' }}
+                >
                   <div style={profileMenuRowLeftStyle}>
                     <div style={profileMenuIconBoxStyle}>{icon}</div>
                     <span style={profileMenuLabelStyle}>{label}</span>
                   </div>
-                  <ChevronRight size={18} color="#cbd5e1" strokeWidth={2.5} />
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                    {badge && <span style={profileBadgeStyle}>{badge}</span>}
+                    <ChevronRight size={18} color="#cbd5e1" strokeWidth={2.5} />
+                  </div>
                 </div>
               ))}
             </div>
@@ -941,7 +1123,353 @@ export function Dashboard({ userData = {}, onLogout }) {
 
       </div>
 
-      {/* (old modal removed — inspect flow is now inline in the Inspect tab) */}
+      {/* ── PROFILE SUB-SETTINGS MODALS ── */}
+      {activeProfileModal && (
+        <div style={profileModalOverlayStyle} onClick={() => setActiveProfileModal(null)}>
+          <div style={profileModalContentStyle} onClick={(e) => e.stopPropagation()}>
+            
+            {/* 1. Account Settings Modal */}
+            {activeProfileModal === 'account' && (
+              <div>
+                <div style={profileModalHeaderStyle}>
+                  <div>
+                    <h3 style={profileModalTitleStyle}>Account Settings</h3>
+                    <p style={profileModalSubTitleStyle}>Update your personal details & profile info</p>
+                  </div>
+                  <button onClick={() => setActiveProfileModal(null)} style={profileModalCloseBtnStyle}>
+                    <X size={18} />
+                  </button>
+                </div>
+
+                <form onSubmit={handleSaveAccount} style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
+                  {/* Profile Picture Upload Section */}
+                  <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', marginBottom: '4px', paddingBottom: '16px', borderBottom: '1px solid #f1f5f9' }}>
+                    <div
+                      onClick={() => avatarInputRef.current?.click()}
+                      style={{
+                        position: 'relative',
+                        width: '76px',
+                        height: '76px',
+                        borderRadius: '50%',
+                        backgroundColor: '#18243e',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        cursor: 'pointer',
+                        marginBottom: '10px',
+                        overflow: 'hidden',
+                        border: '3px solid #cbd5e1',
+                        boxShadow: '0 4px 12px rgba(0,0,0,0.1)'
+                      }}
+                    >
+                      {profileUser.avatar ? (
+                        <img src={profileUser.avatar} alt="Profile Avatar" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                      ) : (
+                        <User size={36} color="#ffffff" />
+                      )}
+                      <div style={{
+                        position: 'absolute',
+                        bottom: 0,
+                        left: 0,
+                        right: 0,
+                        backgroundColor: 'rgba(15, 23, 42, 0.75)',
+                        padding: '3px 0',
+                        display: 'flex',
+                        justifyContent: 'center'
+                      }}>
+                        <Camera size={12} color="#ffffff" />
+                      </div>
+                    </div>
+
+                    <div style={{ display: 'flex', gap: '8px' }}>
+                      <button
+                        type="button"
+                        onClick={() => avatarInputRef.current?.click()}
+                        style={{
+                          padding: '6px 12px',
+                          borderRadius: '8px',
+                          border: '1px solid #1b7a63',
+                          backgroundColor: '#f0fdf4',
+                          color: '#1b7a63',
+                          fontSize: '12px',
+                          fontWeight: '700',
+                          cursor: 'pointer',
+                          display: 'inline-flex',
+                          alignItems: 'center',
+                          gap: '4px'
+                        }}
+                      >
+                        <Upload size={13} /> {profileUser.avatar ? 'Change Photo' : 'Upload Photo'}
+                      </button>
+                      {profileUser.avatar && (
+                        <button
+                          type="button"
+                          onClick={handleRemoveAvatar}
+                          style={{
+                            padding: '6px 12px',
+                            borderRadius: '8px',
+                            border: '1px solid #fecdd3',
+                            backgroundColor: '#fff1f2',
+                            color: '#dc2626',
+                            fontSize: '12px',
+                            fontWeight: '600',
+                            cursor: 'pointer'
+                          }}
+                        >
+                          Remove
+                        </button>
+                      )}
+                    </div>
+                  </div>
+
+                  <div>
+                    <label style={profileLabelStyle}>Full Name</label>
+                    <input
+                      type="text"
+                      value={editForm.name}
+                      onChange={(e) => setEditForm(prev => ({ ...prev, name: e.target.value }))}
+                      placeholder="e.g. Rajesh Kumar"
+                      style={profileInputStyle}
+                      required
+                    />
+                  </div>
+
+                  <div>
+                    <label style={profileLabelStyle}>Email Address</label>
+                    <input
+                      type="email"
+                      value={editForm.email}
+                      onChange={(e) => setEditForm(prev => ({ ...prev, email: e.target.value }))}
+                      placeholder="e.g. rajesh@textileco.com"
+                      style={profileInputStyle}
+                      required
+                    />
+                  </div>
+
+                  <div>
+                    <label style={profileLabelStyle}>Phone Number</label>
+                    <input
+                      type="tel"
+                      value={editForm.phone}
+                      onChange={(e) => setEditForm(prev => ({ ...prev, phone: e.target.value }))}
+                      placeholder="e.g. +91 98765 43210"
+                      style={profileInputStyle}
+                    />
+                  </div>
+
+                  <div>
+                    <label style={profileLabelStyle}>Company / Mill Name</label>
+                    <input
+                      type="text"
+                      value={editForm.company}
+                      onChange={(e) => setEditForm(prev => ({ ...prev, company: e.target.value }))}
+                      placeholder="e.g. Textile Co. Manufacturing"
+                      style={profileInputStyle}
+                    />
+                  </div>
+
+                  <div style={{ display: 'flex', gap: '10px', marginTop: '10px' }}>
+                    <button type="button" onClick={() => setActiveProfileModal(null)} style={profileCancelBtnStyle}>
+                      Cancel
+                    </button>
+                    <button type="submit" style={profileSaveBtnStyle}>
+                      Save Changes
+                    </button>
+                  </div>
+                </form>
+              </div>
+            )}
+
+            {/* 2. Notifications Modal */}
+            {activeProfileModal === 'notifications' && (
+              <div>
+                <div style={profileModalHeaderStyle}>
+                  <div>
+                    <h3 style={profileModalTitleStyle}>Notifications</h3>
+                    <p style={profileModalSubTitleStyle}>Configure your alert preferences</p>
+                  </div>
+                  <button onClick={() => setActiveProfileModal(null)} style={profileModalCloseBtnStyle}>
+                    <X size={18} />
+                  </button>
+                </div>
+
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+                  {[
+                    { key: 'push', title: 'Push Notifications', desc: 'Receive real-time alerts on your device' },
+                    { key: 'email', title: 'Email Inspection Summaries', desc: 'Get automated email reports after scans' },
+                    { key: 'defects', title: 'Critical Defect Warnings', desc: 'Instant alerts when fabric defect count > 5' },
+                    { key: 'reports', title: 'Weekly Quality Digest', desc: 'Summary report of mill inspection grades' },
+                  ].map(({ key, title, desc }) => (
+                    <div key={key} style={profileToggleRowStyle}>
+                      <div>
+                        <div style={{ fontWeight: '600', fontSize: '14px', color: '#0f172a' }}>{title}</div>
+                        <div style={{ fontSize: '12px', color: '#64748b' }}>{desc}</div>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => handleToggleNotification(key)}
+                        style={{
+                          width: '46px',
+                          height: '26px',
+                          borderRadius: '13px',
+                          backgroundColor: profileUser.notifications[key] ? '#1b7a63' : '#cbd5e1',
+                          border: 'none',
+                          cursor: 'pointer',
+                          position: 'relative',
+                          transition: 'background-color 0.2s',
+                          flexShrink: 0
+                        }}
+                      >
+                        <div style={{
+                          width: '20px',
+                          height: '20px',
+                          borderRadius: '50%',
+                          backgroundColor: '#ffffff',
+                          position: 'absolute',
+                          top: '3px',
+                          left: profileUser.notifications[key] ? '23px' : '3px',
+                          transition: 'left 0.2s',
+                          boxShadow: '0 1px 3px rgba(0,0,0,0.2)'
+                        }} />
+                      </button>
+                    </div>
+                  ))}
+
+                  <button onClick={handleSaveNotifications} style={{ ...profileSaveBtnStyle, marginTop: '12px', width: '100%' }}>
+                    Save Preferences
+                  </button>
+                </div>
+              </div>
+            )}
+
+            {/* 3. Language Modal */}
+            {activeProfileModal === 'language' && (
+              <div>
+                <div style={profileModalHeaderStyle}>
+                  <div>
+                    <h3 style={profileModalTitleStyle}>Select Language</h3>
+                    <p style={profileModalSubTitleStyle}>Choose your preferred application language</p>
+                  </div>
+                  <button onClick={() => setActiveProfileModal(null)} style={profileModalCloseBtnStyle}>
+                    <X size={18} />
+                  </button>
+                </div>
+
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                  {[
+                    { id: 'English (US)', label: 'English (US)' },
+                    { id: 'Spanish (Español)', label: 'Spanish (Español)' },
+                    { id: 'Hindi (हिन्दी)', label: 'Hindi (हिन्दी)' },
+                    { id: 'French (Français)', label: 'French (Français)' },
+                    { id: 'German (Deutsch)', label: 'German (Deutsch)' },
+                    { id: 'Tamil (தமிழ்)', label: 'Tamil (தமிழ்)' },
+                  ].map(({ id, label }) => (
+                    <div
+                      key={id}
+                      onClick={() => handleSelectLanguage(id)}
+                      style={{
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'space-between',
+                        padding: '12px 14px',
+                        borderRadius: '12px',
+                        backgroundColor: profileUser.language === id ? '#f0fdf4' : '#f8fafc',
+                        border: profileUser.language === id ? '1.5px solid #16a34a' : '1px solid #e2e8f0',
+                        cursor: 'pointer',
+                        fontWeight: profileUser.language === id ? '700' : '500',
+                        color: profileUser.language === id ? '#166534' : '#1e293b',
+                      }}
+                    >
+                      <span>{label}</span>
+                      {profileUser.language === id && <Check size={18} color="#16a34a" />}
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* 4. Help & Support Modal */}
+            {activeProfileModal === 'help' && (
+              <div>
+                <div style={profileModalHeaderStyle}>
+                  <div>
+                    <h3 style={profileModalTitleStyle}>Help & Support</h3>
+                    <p style={profileModalSubTitleStyle}>Get assistance & view documentation</p>
+                  </div>
+                  <button onClick={() => setActiveProfileModal(null)} style={profileModalCloseBtnStyle}>
+                    <X size={18} />
+                  </button>
+                </div>
+
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
+                  <div style={{ padding: '12px', backgroundColor: '#f8fafc', borderRadius: '12px', border: '1px solid #e2e8f0' }}>
+                    <div style={{ fontWeight: '700', fontSize: '13.5px', color: '#0f172a', marginBottom: '4px' }}>How to scan fabric?</div>
+                    <div style={{ fontSize: '12.5px', color: '#64748b', lineHeight: '1.4' }}>
+                      Navigate to the <strong>Inspect</strong> tab, position the fabric under good lighting, and click <strong>Scan Fabric Roll</strong> or capture live camera feed.
+                    </div>
+                  </div>
+
+                  <div style={{ padding: '12px', backgroundColor: '#f8fafc', borderRadius: '12px', border: '1px solid #e2e8f0' }}>
+                    <div style={{ fontWeight: '700', fontSize: '13.5px', color: '#0f172a', marginBottom: '4px' }}>How is Fabric Grade determined?</div>
+                    <div style={{ fontSize: '12.5px', color: '#64748b', lineHeight: '1.4' }}>
+                      • <strong>Grade A</strong>: 0 - 2 minor flaws per roll<br />
+                      • <strong>Grade B</strong>: 3 - 5 defects detected<br />
+                      • <strong>Grade C</strong>: Critical weave/hole defect requiring rejection
+                    </div>
+                  </div>
+
+                  <div style={{ padding: '14px', backgroundColor: '#ecfdf5', borderRadius: '12px', border: '1px solid #a7f3d0', textAlign: 'center' }}>
+                    <div style={{ fontWeight: '700', fontSize: '14px', color: '#065f46', marginBottom: '4px' }}>Need assistance?</div>
+                    <div style={{ fontSize: '12.5px', color: '#047857', marginBottom: '10px' }}>Our technical support team is available 24/7</div>
+                    <a href="mailto:support@fabrisense.ai" style={{ display: 'inline-block', padding: '8px 16px', backgroundColor: '#10b981', color: '#ffffff', borderRadius: '8px', textDecoration: 'none', fontWeight: '700', fontSize: '13px' }}>
+                      Contact support@fabrisense.ai
+                    </a>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* 5. About FabriSense Modal */}
+            {activeProfileModal === 'about' && (
+              <div>
+                <div style={profileModalHeaderStyle}>
+                  <div>
+                    <h3 style={profileModalTitleStyle}>About FabriSense</h3>
+                    <p style={profileModalSubTitleStyle}>System info & AI model engine</p>
+                  </div>
+                  <button onClick={() => setActiveProfileModal(null)} style={profileModalCloseBtnStyle}>
+                    <X size={18} />
+                  </button>
+                </div>
+
+                <div style={{ textAlign: 'center', padding: '12px 0 20px' }}>
+                  <div style={{ width: '56px', height: '56px', borderRadius: '16px', backgroundColor: '#13223a', color: '#06b6d4', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 10px', fontSize: '24px', fontWeight: '900' }}>
+                    FS
+                  </div>
+                  <div style={{ fontSize: '18px', fontWeight: '800', color: '#0f172a' }}>FabriSense AI</div>
+                  <div style={{ fontSize: '12px', color: '#64748b', marginTop: '2px' }}>v2.4.0 (Enterprise Build)</div>
+                </div>
+
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', fontSize: '13px', color: '#334155' }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', padding: '10px', backgroundColor: '#f8fafc', borderRadius: '8px' }}>
+                    <span>AI Model Engine</span>
+                    <strong>YOLO-v8 Fabric Vision</strong>
+                  </div>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', padding: '10px', backgroundColor: '#f8fafc', borderRadius: '8px' }}>
+                    <span>Mobile Platform</span>
+                    <strong>Capacitor 7.0 Native</strong>
+                  </div>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', padding: '10px', backgroundColor: '#f8fafc', borderRadius: '8px' }}>
+                    <span>License</span>
+                    <strong>Enterprise Industrial</strong>
+                  </div>
+                </div>
+              </div>
+            )}
+
+          </div>
+        </div>
+      )}
       {false && (
         <div style={modalOverlayStyle} onClick={() => setShowInspectionModal(false)}>
           <div style={{ ...bottomSheetStyle, maxHeight: '90vh', overflowY: 'auto' }} onClick={(e) => e.stopPropagation()}>
@@ -1760,33 +2288,20 @@ const profilePageStyle = {
 
 // Dark navy rounded header card
 const profileHeaderCardStyle = {
-  background: 'linear-gradient(160deg, #13223a 0%, #162035 100%)',
+  background: 'linear-gradient(160deg, #18243e 0%, #121a2c 100%)',
   borderBottomLeftRadius: '32px',
   borderBottomRightRadius: '32px',
-  padding: '44px 24px 32px',
+  padding: '40px 24px 32px',
   display: 'flex',
   flexDirection: 'column',
   alignItems: 'center',
   textAlign: 'center',
   marginBottom: '20px',
-};
-
-// Avatar circle — placeholder User icon, no photo
-const profileAvatarCircleStyle = {
-  width: '88px',
-  height: '88px',
-  borderRadius: '50%',
-  background: 'linear-gradient(135deg, #1b7a63 0%, #0d9488 100%)',
-  display: 'flex',
-  alignItems: 'center',
-  justifyContent: 'center',
-  marginBottom: '14px',
-  border: '3px solid rgba(255,255,255,0.18)',
-  boxShadow: '0 6px 24px rgba(0,0,0,0.35)',
+  boxShadow: '0 8px 24px rgba(0,0,0,0.12)',
 };
 
 const profileNameStyle = {
-  fontSize: '20px',
+  fontSize: '22px',
   fontWeight: '800',
   color: '#ffffff',
   letterSpacing: '-0.02em',
@@ -1794,9 +2309,48 @@ const profileNameStyle = {
 };
 
 const profileEmailStyle = {
-  fontSize: '13px',
-  color: 'rgba(255,255,255,0.55)',
+  fontSize: '13.5px',
+  color: 'rgba(255,255,255,0.7)',
   fontWeight: '400',
+};
+
+const profileEditPillBtnStyle = {
+  marginTop: '12px',
+  display: 'inline-flex',
+  alignItems: 'center',
+  padding: '6px 14px',
+  borderRadius: '20px',
+  backgroundColor: 'rgba(255, 255, 255, 0.12)',
+  border: '1px solid rgba(255, 255, 255, 0.25)',
+  color: '#ffffff',
+  fontSize: '12px',
+  fontWeight: '600',
+  cursor: 'pointer',
+  transition: 'background-color 0.2s',
+};
+
+const profileToastStyle = {
+  margin: '12px 16px -8px',
+  padding: '10px 14px',
+  borderRadius: '12px',
+  backgroundColor: '#ecfdf5',
+  border: '1px solid #a7f3d0',
+  color: '#065f46',
+  fontSize: '13px',
+  fontWeight: '600',
+  display: 'flex',
+  alignItems: 'center',
+  gap: '8px',
+  boxShadow: '0 2px 8px rgba(0,0,0,0.04)',
+};
+
+const profileBadgeStyle = {
+  fontSize: '11px',
+  fontWeight: '700',
+  color: '#0284c7',
+  backgroundColor: '#e0f2fe',
+  padding: '3px 8px',
+  borderRadius: '10px',
 };
 
 // White rounded card containing the menu rows
@@ -1806,14 +2360,15 @@ const profileMenuCardStyle = {
   marginInline: '16px',
   marginBottom: '16px',
   overflow: 'hidden',
-  boxShadow: '0 1px 6px rgba(0,0,0,0.06)',
+  boxShadow: '0 2px 12px rgba(0,0,0,0.04)',
+  border: '1px solid #f1f5f9',
 };
 
 const profileMenuRowStyle = {
   display: 'flex',
   alignItems: 'center',
   justifyContent: 'space-between',
-  padding: '15px 18px',
+  padding: '16px 18px',
   cursor: 'pointer',
   transition: 'background-color 0.15s',
 };
@@ -1825,8 +2380,8 @@ const profileMenuRowLeftStyle = {
 };
 
 const profileMenuIconBoxStyle = {
-  width: '36px',
-  height: '36px',
+  width: '38px',
+  height: '38px',
   borderRadius: '10px',
   backgroundColor: '#f1f5f9',
   display: 'flex',
@@ -1836,7 +2391,7 @@ const profileMenuIconBoxStyle = {
 };
 
 const profileMenuLabelStyle = {
-  fontSize: '14.5px',
+  fontSize: '15px',
   fontWeight: '600',
   color: '#1e293b',
 };
@@ -1854,6 +2409,121 @@ const profileLogoutBtnStyle = {
   fontSize: '15px',
   cursor: 'pointer',
   letterSpacing: '0.01em',
+};
+
+const profileModalOverlayStyle = {
+  position: 'fixed',
+  top: 0,
+  left: 0,
+  right: 0,
+  bottom: 0,
+  backgroundColor: 'rgba(15, 23, 42, 0.65)',
+  backdropFilter: 'blur(4px)',
+  zIndex: 9999,
+  display: 'flex',
+  alignItems: 'center',
+  justifyContent: 'center',
+  padding: '16px',
+};
+
+const profileModalContentStyle = {
+  backgroundColor: '#ffffff',
+  borderRadius: '24px',
+  width: '100%',
+  maxWidth: '420px',
+  padding: '24px',
+  boxShadow: '0 20px 40px rgba(0,0,0,0.25)',
+  maxHeight: '90vh',
+  overflowY: 'auto',
+  boxSizing: 'border-box',
+};
+
+const profileModalHeaderStyle = {
+  display: 'flex',
+  alignItems: 'flex-start',
+  justifyContent: 'space-between',
+  marginBottom: '18px',
+  paddingBottom: '12px',
+  borderBottom: '1px solid #f1f5f9',
+};
+
+const profileModalTitleStyle = {
+  fontSize: '18px',
+  fontWeight: '800',
+  color: '#0f172a',
+  margin: 0,
+};
+
+const profileModalSubTitleStyle = {
+  fontSize: '12px',
+  color: '#64748b',
+  margin: '2px 0 0 0',
+};
+
+const profileModalCloseBtnStyle = {
+  border: 'none',
+  backgroundColor: '#f1f5f9',
+  color: '#64748b',
+  width: '32px',
+  height: '32px',
+  borderRadius: '50%',
+  display: 'flex',
+  alignItems: 'center',
+  justifyContent: 'center',
+  cursor: 'pointer',
+};
+
+const profileLabelStyle = {
+  display: 'block',
+  fontSize: '12.5px',
+  fontWeight: '700',
+  color: '#334155',
+  marginBottom: '6px',
+};
+
+const profileInputStyle = {
+  width: '100%',
+  padding: '11px 14px',
+  borderRadius: '12px',
+  border: '1.5px solid #cbd5e1',
+  fontSize: '14px',
+  color: '#0f172a',
+  outline: 'none',
+  boxSizing: 'border-box',
+};
+
+const profileCancelBtnStyle = {
+  flex: 1,
+  padding: '12px',
+  borderRadius: '12px',
+  border: '1px solid #cbd5e1',
+  backgroundColor: '#f8fafc',
+  color: '#475569',
+  fontWeight: '700',
+  fontSize: '14px',
+  cursor: 'pointer',
+};
+
+const profileSaveBtnStyle = {
+  flex: 1,
+  padding: '12px',
+  borderRadius: '12px',
+  border: 'none',
+  backgroundColor: '#1b7a63',
+  color: '#ffffff',
+  fontWeight: '700',
+  fontSize: '14px',
+  cursor: 'pointer',
+};
+
+const profileToggleRowStyle = {
+  display: 'flex',
+  alignItems: 'center',
+  justifyContent: 'space-between',
+  padding: '12px',
+  borderRadius: '14px',
+  backgroundColor: '#f8fafc',
+  border: '1px solid #f1f5f9',
 };
 
 export default Dashboard;

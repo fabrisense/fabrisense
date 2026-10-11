@@ -181,7 +181,15 @@ const outlineBtn = {
 };
 
 // ─── Main Component ──────────────────────────────────────────────────────────
-export function LoginPage({ onLoginSuccess, onBack }) {
+export function LoginPage({ onLoginSuccess, onBack, theme = 'green' }) {
+  const isBlue = theme === 'blue';
+  const accentColor = isBlue ? '#3b82f6' : 'var(--accent-green)';
+  const pillGradient = isBlue ? 'linear-gradient(135deg, #2563eb 0%, #1d4ed8 100%)' : 'linear-gradient(135deg, var(--accent-green) 0%, #055a44 100%)';
+  const pillShadow = isBlue ? '0 4px 14px rgba(37,99,235,0.4)' : '0 4px 14px rgba(8,131,101,0.4)';
+  const customBtnStyle = (disabled) => ({
+    ...primaryBtn(disabled),
+    ...(isBlue ? { background: 'linear-gradient(135deg, #2563eb 0%, #1d4ed8 100%)', boxShadow: '0 4px 14px rgba(37,99,235,0.4)' } : {})
+  });
   // 'login' | 'register' | 'forgot'
   const [mode, setMode] = useState('login');
 
@@ -451,7 +459,7 @@ export function LoginPage({ onLoginSuccess, onBack }) {
   // ── RENDER ────────────────────────────────────────────────────────────────
   return (
     <div style={{
-      position: 'fixed', inset: 0,
+      position: 'absolute', inset: 0,
       backgroundColor: 'var(--bg-deep)',
       color: 'var(--text-main)',
       fontFamily: "'Plus Jakarta Sans', system-ui, -apple-system, sans-serif",
@@ -459,85 +467,100 @@ export function LoginPage({ onLoginSuccess, onBack }) {
       overflowY: 'auto',
     }}>
 
-      {/* ── Top Header ── */}
-      <div style={{
-        width: '100%', display: 'flex', alignItems: 'center',
-        padding: '16px 20px',
-        borderBottom: '1px solid var(--border-subtle)',
-        backgroundColor: 'var(--bg-surface)',
-        flexShrink: 0,
-        position: 'sticky', top: 0, zIndex: 10,
-      }}>
-        <button
-          onClick={() => {
-            if (mode === 'login') { onBack?.(); }
-            else if (mode === 'register' && regStep === 'otp') { setRegStep(null); setRegErr(''); setRegSuccess(''); }
-            else if (mode === 'forgot' && forgotStep === 'otp') { setForgotStep('email'); setForgotErr(''); setForgotSuccess(''); }
-            else if (mode === 'forgot' && forgotStep === 'reset') { setForgotStep('otp'); setForgotErr(''); }
-            else { goMode('login'); }
-          }}
-          style={{
-            display: 'flex', alignItems: 'center', gap: '6px',
-            background: 'none', border: 'none', cursor: 'pointer',
-            color: 'var(--accent-green)', fontWeight: '700', fontSize: '0.9rem',
-            fontFamily: "'Plus Jakarta Sans', system-ui, sans-serif",
-            padding: '6px 10px 6px 0',
-          }}>
-          <ArrowLeft size={20} /> Back
-        </button>
-
-        {/* Logo */}
-        <div style={{ flex: 1, display: 'flex', justifyContent: 'center', alignItems: 'center', gap: '8px', marginRight: '60px' }}>
-          <div style={{ width: '7px', height: '18px', backgroundColor: 'var(--accent-green)', borderRadius: '3px' }} />
-          <span style={{ fontSize: '1.1rem', fontWeight: '800', color: 'var(--text-heading)', letterSpacing: '-0.01em' }}>
-            FabriSense
-          </span>
-        </div>
-      </div>
-
-      {/* ── Scrollable Content ── */}
+      {/* ── Content Container ── */}
       <div style={{
         flex: 1, display: 'flex', flexDirection: 'column',
-        alignItems: 'center', justifyContent: 'center',
-        padding: '32px 20px 48px',
+        alignItems: 'center', justifyContent: 'flex-start',
+        padding: '24px 20px',
       }}>
         <div style={{ width: '100%', maxWidth: '420px' }}>
 
+          {/* ── Top Slide Segmented Bar (Sign In / Sign Up) ── */}
+          {(mode === 'login' || (mode === 'register' && regStep === null)) && (
+            <div style={{
+              position: 'relative',
+              display: 'flex',
+              backgroundColor: 'var(--bg-input)',
+              border: '1px solid var(--border-subtle)',
+              borderRadius: '24px',
+              padding: '4px',
+              marginBottom: '20px',
+              width: '100%',
+              boxShadow: '0 2px 10px rgba(0,0,0,0.2)',
+            }}>
+              {/* Animated Sliding Active Indicator Pill */}
+              <div
+                style={{
+                  position: 'absolute',
+                  top: '4px',
+                  bottom: '4px',
+                  left: mode === 'login' ? '4px' : 'calc(50% + 2px)',
+                  width: 'calc(50% - 6px)',
+                  borderRadius: '20px',
+                  background: pillGradient,
+                  boxShadow: pillShadow,
+                  transition: 'left 0.3s cubic-bezier(0.4, 0, 0.2, 1)',
+                }}
+              />
+
+              {/* Sign In Tab Button */}
+              <button
+                type="button"
+                onClick={() => goMode('login')}
+                style={{
+                  flex: 1,
+                  position: 'relative',
+                  zIndex: 1,
+                  padding: '10px 0',
+                  border: 'none',
+                  background: 'transparent',
+                  color: mode === 'login' ? '#ffffff' : 'var(--text-muted)',
+                  fontWeight: '700',
+                  fontSize: '0.9rem',
+                  cursor: 'pointer',
+                  transition: 'color 0.3s ease',
+                  fontFamily: "'Plus Jakarta Sans', system-ui, sans-serif",
+                }}
+              >
+                Sign In
+              </button>
+
+              {/* Sign Up Tab Button */}
+              <button
+                type="button"
+                onClick={() => goMode('register')}
+                style={{
+                  flex: 1,
+                  position: 'relative',
+                  zIndex: 1,
+                  padding: '10px 0',
+                  border: 'none',
+                  background: 'transparent',
+                  color: mode === 'register' ? '#ffffff' : 'var(--text-muted)',
+                  fontWeight: '700',
+                  fontSize: '0.9rem',
+                  cursor: 'pointer',
+                  transition: 'color 0.3s ease',
+                  fontFamily: "'Plus Jakarta Sans', system-ui, sans-serif",
+                }}
+              >
+                Sign Up
+              </button>
+            </div>
+          )}
+
           {/* ================================================================
-              MODE: LOGIN
+              MODE: LOGIN (SIGN IN)
           ================================================================ */}
           {mode === 'login' && (
             <>
-              {/* Icon + Heading */}
-              <div style={{ textAlign: 'center', marginBottom: '28px' }}>
-                <div style={{
-                  width: '68px', height: '68px', margin: '0 auto 16px',
-                  borderRadius: '20px', backgroundColor: 'var(--icon-box-bg)',
-                  border: '1px solid var(--icon-box-border)',
-                  display: 'flex', alignItems: 'center', justifyContent: 'center',
-                }}>
-                  <svg width="32" height="32" viewBox="0 0 24 24" fill="none">
-                    <path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8L14 2z"
-                      stroke="var(--accent-green)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
-                    <path d="M14 2v6h6" stroke="var(--accent-green)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
-                    <path d="M9 13h6M9 17h4" stroke="var(--accent-green)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
-                  </svg>
-                </div>
-                <h1 style={{ fontSize: '1.9rem', fontWeight: '800', margin: '0 0 6px', color: 'var(--text-heading)', letterSpacing: '-0.02em' }}>
-                  Welcome back
-                </h1>
-                <p style={{ fontSize: '0.87rem', color: 'var(--text-muted)', margin: 0 }}>
-                  Sign in to inspect your fabric quality
-                </p>
-              </div>
-
               {loginErr && <Banner type="error" message={loginErr} />}
 
-              <form onSubmit={handleLogin} noValidate style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
-                {/* Email — using type="text" to avoid Chrome blank screen bug */}
+              <form onSubmit={handleLogin} noValidate style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
+                {/* Email */}
                 <FieldWrapper label="Email Address">
                   <div style={inputWrap(false)}>
-                    <Mail size={18} color="var(--accent-green)" />
+                    <Mail size={18} color={accentColor} />
                     <input
                       style={inputStyle}
                       type="text"
@@ -551,7 +574,7 @@ export function LoginPage({ onLoginSuccess, onBack }) {
                     />
                     {loginEmail && isValidEmail(loginEmail) &&
                       users.find(u => u.email.toLowerCase() === loginEmail.trim().toLowerCase()) &&
-                      <CheckCircle size={17} color="var(--accent-green)" />
+                      <CheckCircle size={17} color={accentColor} />
                     }
                   </div>
                 </FieldWrapper>
@@ -559,7 +582,7 @@ export function LoginPage({ onLoginSuccess, onBack }) {
                 {/* Password */}
                 <FieldWrapper label="Password">
                   <div style={inputWrap(false)}>
-                    <Lock size={18} color="var(--accent-green)" />
+                    <Lock size={18} color={accentColor} />
                     <input
                       style={inputStyle}
                       type={showLoginPwd ? 'text' : 'password'}
@@ -582,45 +605,26 @@ export function LoginPage({ onLoginSuccess, onBack }) {
                   </div>
                 </FieldWrapper>
 
-                <button type="submit" style={{ ...primaryBtn(false), marginTop: '6px' }}>
+                <button type="submit" style={{ ...customBtnStyle(false), marginTop: '6px' }}>
                   Sign In
-                </button>
-
-                <div style={{ display: 'flex', alignItems: 'center', margin: '4px 0' }}>
-                  <div style={{ flex: 1, height: '1px', backgroundColor: 'var(--border-subtle)' }} />
-                  <span style={{ padding: '0 12px', fontSize: '0.75rem', fontWeight: '700', color: 'var(--text-dim)' }}>OR</span>
-                  <div style={{ flex: 1, height: '1px', backgroundColor: 'var(--border-subtle)' }} />
-                </div>
-
-                <button type="button" style={outlineBtn} onClick={() => goMode('register')}>
-                  Create Account
                 </button>
               </form>
             </>
           )}
 
           {/* ================================================================
-              MODE: REGISTER — Step 1: collect details
+              MODE: REGISTER (SIGN UP) — Step 1: collect details
           ================================================================ */}
           {mode === 'register' && regStep === null && (
             <>
-              <div style={{ marginBottom: '22px' }}>
-                <h1 style={{ fontSize: '1.9rem', fontWeight: '800', margin: '0 0 5px', color: 'var(--text-heading)', letterSpacing: '-0.02em' }}>
-                  Create Account
-                </h1>
-                <p style={{ fontSize: '0.87rem', color: 'var(--text-muted)', margin: 0 }}>
-                  Join weavers and inspectors across the globe
-                </p>
-              </div>
-
               {regErr     && <Banner type="error"   message={regErr} />}
               {regSuccess && <Banner type="success" message={regSuccess} />}
 
-              <form onSubmit={handleRegister} noValidate style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
+              <form onSubmit={handleRegister} noValidate style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
                 {/* Full Name */}
                 <FieldWrapper label="Full Name">
                   <div style={inputWrap(false)}>
-                    <User size={18} color="var(--accent-green)" />
+                    <User size={18} color={accentColor} />
                     <input
                       style={inputStyle}
                       type="text"
@@ -635,7 +639,7 @@ export function LoginPage({ onLoginSuccess, onBack }) {
                 {/* Email */}
                 <FieldWrapper label="Email Address">
                   <div style={inputWrap(false)}>
-                    <Mail size={18} color="var(--accent-green)" />
+                    <Mail size={18} color={accentColor} />
                     <input
                       style={inputStyle}
                       type="text"
@@ -648,7 +652,7 @@ export function LoginPage({ onLoginSuccess, onBack }) {
                       autoCapitalize="none"
                     />
                     {regEmail && isValidEmail(regEmail) &&
-                      <CheckCircle size={17} color="var(--accent-green)" />
+                      <CheckCircle size={17} color={accentColor} />
                     }
                   </div>
                 </FieldWrapper>
@@ -656,7 +660,7 @@ export function LoginPage({ onLoginSuccess, onBack }) {
                 {/* Password */}
                 <FieldWrapper label="Create Password">
                   <div style={inputWrap(pwdStrength === 'weak')}>
-                    <Lock size={18} color="var(--accent-green)" />
+                    <Lock size={18} color={accentColor} />
                     <input
                       style={inputStyle}
                       type={showRegPwd ? 'text' : 'password'}
@@ -684,14 +688,6 @@ export function LoginPage({ onLoginSuccess, onBack }) {
                           }} />
                         ))}
                       </div>
-                      {pwdStrength === 'weak'
-                        ? <div style={{ display: 'flex', alignItems: 'center', gap: '4px', color: '#ef4444', fontSize: '0.75rem', fontWeight: '600' }}>
-                            <AlertCircle size={13} /><span>At least 8 characters ({regPwd.length}/8)</span>
-                          </div>
-                        : <div style={{ display: 'flex', alignItems: 'center', gap: '4px', color: 'var(--accent-green)', fontSize: '0.75rem', fontWeight: '600' }}>
-                            <CheckCircle size={13} /><span>Strong password ({regPwd.length} characters)</span>
-                          </div>
-                      }
                     </div>
                   )}
                 </FieldWrapper>
@@ -701,7 +697,7 @@ export function LoginPage({ onLoginSuccess, onBack }) {
                   label="Confirm Password"
                   error={regConfirm && regConfirm !== regPwd ? 'Passwords do not match' : ''}>
                   <div style={inputWrap(regConfirm && regConfirm !== regPwd)}>
-                    <Lock size={18} color="var(--accent-green)" />
+                    <Lock size={18} color={accentColor} />
                     <input
                       style={inputStyle}
                       type="password"
@@ -711,7 +707,7 @@ export function LoginPage({ onLoginSuccess, onBack }) {
                       onChange={e => { setRegErr(''); setRegConfirm(e.target.value); }}
                     />
                     {regConfirm && regConfirm === regPwd &&
-                      <CheckCircle size={17} color="var(--accent-green)" />
+                      <CheckCircle size={17} color={accentColor} />
                     }
                   </div>
                 </FieldWrapper>
@@ -719,25 +715,16 @@ export function LoginPage({ onLoginSuccess, onBack }) {
                 <button
                   type="submit"
                   disabled={regLoading}
-                  style={{ ...primaryBtn(regLoading), marginTop: '8px' }}
+                  style={{ ...customBtnStyle(regLoading), marginTop: '6px' }}
                 >
-                  {regLoading ? 'Sending verification code…' : 'Continue'}
+                  {regLoading ? 'Sending verification code…' : 'Create Account'}
                 </button>
-
-                <div style={{ textAlign: 'center', fontSize: '0.84rem', color: 'var(--text-muted)', marginTop: '4px' }}>
-                  Already have an account?{' '}
-                  <span
-                    onClick={() => goMode('login')}
-                    style={{ fontWeight: '700', color: 'var(--accent-green)', cursor: 'pointer', textDecoration: 'underline' }}>
-                    Sign In
-                  </span>
-                </div>
               </form>
             </>
           )}
 
           {/* ================================================================
-              MODE: REGISTER — Step 2: OTP verification
+MODE: REGISTER — Step 2: OTP verification
           ================================================================ */}
           {mode === 'register' && regStep === 'otp' && (
             <>
@@ -748,7 +735,7 @@ export function LoginPage({ onLoginSuccess, onBack }) {
                   border: '1px solid var(--icon-box-border)',
                   display: 'flex', alignItems: 'center', justifyContent: 'center',
                 }}>
-                  <Mail size={28} color="var(--accent-green)" />
+                  <Mail size={28} color={accentColor} />
                 </div>
                 <h1 style={{ fontSize: '1.8rem', fontWeight: '800', margin: '0 0 6px', color: 'var(--text-heading)', letterSpacing: '-0.02em' }}>
                   Verify Your Email
@@ -794,7 +781,7 @@ export function LoginPage({ onLoginSuccess, onBack }) {
                   border: '1px solid var(--icon-box-border)',
                   display: 'flex', alignItems: 'center', justifyContent: 'center',
                 }}>
-                  <Lock size={28} color="var(--accent-green)" />
+                  <Lock size={28} color={accentColor} />
                 </div>
                 <h1 style={{ fontSize: '1.8rem', fontWeight: '800', margin: '0 0 6px', color: 'var(--text-heading)', letterSpacing: '-0.02em' }}>
                   Forgot Password?
@@ -810,7 +797,7 @@ export function LoginPage({ onLoginSuccess, onBack }) {
               <form onSubmit={handleForgotSendOtp} noValidate style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
                 <FieldWrapper label="Registered Email Address">
                   <div style={inputWrap(false)}>
-                    <Mail size={18} color="var(--accent-green)" />
+                    <Mail size={18} color={accentColor} />
                     <input
                       style={inputStyle}
                       type="text"
@@ -849,7 +836,7 @@ export function LoginPage({ onLoginSuccess, onBack }) {
                   border: '1px solid var(--icon-box-border)',
                   display: 'flex', alignItems: 'center', justifyContent: 'center',
                 }}>
-                  <Mail size={28} color="var(--accent-green)" />
+                  <Mail size={28} color={accentColor} />
                 </div>
                 <h1 style={{ fontSize: '1.8rem', fontWeight: '800', margin: '0 0 6px', color: 'var(--text-heading)', letterSpacing: '-0.02em' }}>
                   Enter Verification Code
@@ -894,7 +881,7 @@ export function LoginPage({ onLoginSuccess, onBack }) {
                   border: '1px solid var(--icon-box-border)',
                   display: 'flex', alignItems: 'center', justifyContent: 'center',
                 }}>
-                  <Lock size={28} color="var(--accent-green)" />
+                  <Lock size={28} color={accentColor} />
                 </div>
                 <h1 style={{ fontSize: '1.8rem', fontWeight: '800', margin: '0 0 6px', color: 'var(--text-heading)', letterSpacing: '-0.02em' }}>
                   Set New Password
@@ -910,7 +897,7 @@ export function LoginPage({ onLoginSuccess, onBack }) {
               <form onSubmit={handleResetPassword} noValidate style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
                 <FieldWrapper label="New Password">
                   <div style={inputWrap(false)}>
-                    <Lock size={18} color="var(--accent-green)" />
+                    <Lock size={18} color={accentColor} />
                     <input
                       style={inputStyle}
                       type={showNewPwd ? 'text' : 'password'}
@@ -930,7 +917,7 @@ export function LoginPage({ onLoginSuccess, onBack }) {
                   label="Confirm New Password"
                   error={newPwdConfirm && newPwdConfirm !== newPwd ? 'Passwords do not match' : ''}>
                   <div style={inputWrap(newPwdConfirm && newPwdConfirm !== newPwd)}>
-                    <Lock size={18} color="var(--accent-green)" />
+                    <Lock size={18} color={accentColor} />
                     <input
                       style={inputStyle}
                       type="password"
@@ -940,7 +927,7 @@ export function LoginPage({ onLoginSuccess, onBack }) {
                       onChange={e => { setForgotErr(''); setNewPwdConfirm(e.target.value); }}
                     />
                     {newPwdConfirm && newPwdConfirm === newPwd &&
-                      <CheckCircle size={17} color="var(--accent-green)" />
+                      <CheckCircle size={17} color={accentColor} />
                     }
                   </div>
                 </FieldWrapper>
