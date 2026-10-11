@@ -16,7 +16,9 @@
  * Never put secrets here — this file is bundled into the client.
  */
 
-const API_BASE = (import.meta.env.VITE_API_BASE_URL || '').replace(/\/$/, '');
+const rawApiBase = (import.meta.env.VITE_API_BASE_URL || '').replace(/\/$/, '');
+const isBrowser = typeof window !== 'undefined' && window.location.hostname !== '10.0.2.2';
+const API_BASE = isBrowser && rawApiBase.includes('10.0.2.2') ? '' : rawApiBase;
 
 /**
  * Low-level fetch wrapper.

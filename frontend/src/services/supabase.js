@@ -5,7 +5,10 @@
 
 import { createClient } from '@supabase/supabase-js';
 
-const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL || '';
+const SUPABASE_URL = (import.meta.env.VITE_SUPABASE_URL || '')
+  .trim()
+  .replace(/\/+$/, '')
+  .replace(/\/rest\/v1$/i, '');
 const SUPABASE_ANON_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY || '';
 const STORAGE_BUCKET = import.meta.env.VITE_SUPABASE_STORAGE_BUCKET || 'inspection-images';
 
@@ -32,6 +35,82 @@ export function getSupabase() {
     });
   }
   return supabaseClient;
+}
+
+function requireSupabase() {
+  const supabase = getSupabase();
+  if (!supabase) {
+    throw new Error(
+      'Supabase is not configured. Set VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY in frontend/.env, then restart the frontend.',
+    );
+  }
+  return supabase;
+}
+
+export function getProfileFromUser(user) {
+  const email = user.email || '';
+  return {
+    name: user.user_metadata?.full_name || email.split('@')[0] || 'User',
+    email,
+    role: user.app_metadata?.role === 'admin' ? 'Admin' : 'User',
+  };
+}
+
+export async function signInWithPassword(email, password) {
+  const { data, error } = await requireSupabase().auth.signInWithPassword({ email, password });
+  if (error) throw error;
+  return data;
+}
+
+export async function signUpWithPassword(email, password, fullName) {
+  const { data, error } = await requireSupabase().auth.signUp({
+    email,
+    password,
+    options: { data: { full_name: fullName } },
+  });
+  if (error) throw error;
+  return data;
+}
+
+export async function verifySignupOtp(email, token) {
+  const { data, error } = await requireSupabase().auth.verifyOtp({
+    email,
+    token,
+    type: 'signup',
+  });
+  if (error) throw error;
+  return data;
+}
+
+export async function resendSignupOtp(email) {
+  const { error } = await requireSupabase().auth.resend({ email, type: 'signup' });
+  if (error) throw error;
+}
+
+export async function sendPasswordRecoveryOtp(email) {
+  const { error } = await requireSupabase().auth.resetPasswordForEmail(email);
+  if (error) throw error;
+  return { cooldown: 60 };
+}
+
+export async function verifyPasswordRecoveryOtp(email, token) {
+  const { data, error } = await requireSupabase().auth.verifyOtp({
+    email,
+    token,
+    type: 'recovery',
+  });
+  if (error) throw error;
+  return data;
+}
+
+export async function updatePassword(password) {
+  const { error } = await requireSupabase().auth.updateUser({ password });
+  if (error) throw error;
+}
+
+export async function signOut() {
+  const { error } = await requireSupabase().auth.signOut();
+  if (error) throw error;
 }
 
 /**
@@ -132,6 +211,15 @@ export async function uploadImageToSupabase(file, customName) {
 export default {
   isSupabaseConfigured,
   getSupabase,
+  getProfileFromUser,
+  signInWithPassword,
+  signUpWithPassword,
+  verifySignupOtp,
+  resendSignupOtp,
+  sendPasswordRecoveryOtp,
+  verifyPasswordRecoveryOtp,
+  updatePassword,
+  signOut,
   subscribeToInspections,
   subscribeToDefects,
   uploadImageToSupabase,

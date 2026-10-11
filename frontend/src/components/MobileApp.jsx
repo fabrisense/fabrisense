@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { SplashScreen } from './SplashScreen';
 import { RoleSelect }   from './RoleSelect';
 import { UserLoginView } from './UserLoginView';
@@ -6,6 +6,11 @@ import { AdminLoginView } from './AdminLoginView';
 import { Dashboard }    from './Dashboard';
 import { AdminDashboard } from './AdminDashboard';
 import { ExternalLink } from 'lucide-react';
+import {
+  getProfileFromUser,
+  getSupabase,
+  signOut,
+} from '../services/supabase.js';
 import '../index.css';
 
 /*
@@ -22,14 +27,45 @@ export function MobileApp() {
   const [viewState, setViewState] = useState('roleSelect'); // 'roleSelect' | 'userLogin' | 'adminLogin'
   const [animating, setAnimating] = useState(null);        // 'userIn' | 'userOut' | 'adminIn' | 'adminOut' | null
 
-  const [userSession, setUserSession] = useState(() => {
+  const [userSession, setUserSession] = useState(null);
+  const passwordRecoveryRef = useRef(false);
+
+  useEffect(() => {
+    const supabase = getSupabase();
+    if (!supabase) return undefined;
+
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
+      if (event === 'PASSWORD_RECOVERY') {
+        passwordRecoveryRef.current = true;
+        setUserSession(null);
+        setScreen('main');
+        setViewState('userLogin');
+        setAnimating(null);
+        return;
+      }
+
+      if (event === 'SIGNED_OUT') {
+        passwordRecoveryRef.current = false;
+        setUserSession(null);
+        return;
+      }
+
+      if (passwordRecoveryRef.current) return;
+
+      const profile = session?.user ? getProfileFromUser(session.user) : null;
+      setUserSession(profile);
+      if (event === 'INITIAL_SESSION' && profile) setScreen('dashboard');
+    });
+
     try {
-      const saved = localStorage.getItem('fabrisense_session');
-      return saved ? JSON.parse(saved) : null;
-    } catch {
-      return null;
+      localStorage.removeItem('fabrisense_session');
+      localStorage.removeItem('fabrisense_users');
+    } catch (error) {
+      console.error('Failed to clear legacy local authentication data:', error);
     }
-  });
+
+    return () => subscription.unsubscribe();
+  }, []);
 
   /* ── User Navigation ── */
   const handleSelectUser = () => {
@@ -66,27 +102,28 @@ export function MobileApp() {
   };
 
   const handleLoginSuccess = (data) => {
+    const role = data?.role || (viewState === 'adminLogin' ? 'Admin' : 'User');
     const sessionData = {
-      name:  data?.name  || 'Rajesh Kumar',
-      email: data?.email || 'rajesh@textileco.com',
-      role:  viewState === 'adminLogin' ? 'Admin' : 'User',
       ...data,
+      name: data?.name || (role === 'Admin' ? 'Rajesh Kumar' : 'User'),
+      email: data?.email || '',
+      role,
     };
     setUserSession(sessionData);
     setScreen('dashboard');
-    try {
-      localStorage.setItem('fabrisense_session', JSON.stringify(sessionData));
-    } catch (e) { console.error(e); }
   };
 
-  const handleLogout = () => {
-    setUserSession(null);
-    setScreen('main');
-    setViewState('roleSelect');
-    setAnimating(null);
+  const handleLogout = async () => {
     try {
-      localStorage.removeItem('fabrisense_session');
-    } catch (e) { console.error(e); }
+      await signOut();
+    } catch (error) {
+      console.warn('Sign out warning:', error);
+    } finally {
+      setUserSession(null);
+      setScreen('main');
+      setViewState('roleSelect');
+      setAnimating(null);
+    }
   };
 
   const isSplash    = screen === 'splash';
@@ -197,39 +234,41 @@ export function MobileApp() {
         position: 'relative',
       }}
     >
-      {/* Floating link to Desktop Admin Portal */}
-      <div
-        style={{
-          position: 'fixed',
-          top: '14px',
-          right: '14px',
-          zIndex: 9999,
-        }}
-      >
-        <a
-          href="/admin/dashboard"
+      {/* Floating link to Desktop Admin Portal - Hidden on admin login since admin login leads directly to the admin dashboard */}
+      {viewState !== 'adminLogin' && animating !== 'adminIn' && screen !== 'dashboard' && (
+        <div
           style={{
-            backgroundColor: '#1f2a44',
-            color: '#ffffff',
-            border: '1px solid rgba(32, 140, 125, 0.4)',
-            padding: '6px 12px',
-            borderRadius: '20px',
-            fontSize: '11.5px',
-            fontWeight: '600',
-            textDecoration: 'none',
-            display: 'flex',
-            alignItems: 'center',
-            gap: '6px',
-            boxShadow: '0 4px 12px rgba(0,0,0,0.4)',
-            backdropFilter: 'blur(8px)',
+            position: 'fixed',
+            top: '14px',
+            right: '14px',
+            zIndex: 9999,
           }}
-          title="Switch to Management Admin Portal"
         >
-          <span style={{ width: '6px', height: '6px', borderRadius: '50%', backgroundColor: '#208c7d' }} />
-          <span>Admin Portal</span>
-          <ExternalLink size={12} />
-        </a>
-      </div>
+          <a
+            href="/admin/dashboard"
+            style={{
+              backgroundColor: '#1f2a44',
+              color: '#ffffff',
+              border: '1px solid rgba(32, 140, 125, 0.4)',
+              padding: '6px 12px',
+              borderRadius: '20px',
+              fontSize: '11.5px',
+              fontWeight: '600',
+              textDecoration: 'none',
+              display: 'flex',
+              alignItems: 'center',
+              gap: '6px',
+              boxShadow: '0 4px 12px rgba(0,0,0,0.4)',
+              backdropFilter: 'blur(8px)',
+            }}
+            title="Switch to Management Admin Portal"
+          >
+            <span style={{ width: '6px', height: '6px', borderRadius: '50%', backgroundColor: '#208c7d' }} />
+            <span>Admin Portal</span>
+            <ExternalLink size={12} />
+          </a>
+        </div>
+      )}
 
       {/* Desktop subtle grid pattern */}
       <div

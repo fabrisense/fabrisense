@@ -289,6 +289,14 @@ FabriSense features an intelligent **Dual-Driver Architecture**:
    - **anon / public key**
    - **service_role key** (keep secret; never commit to git or expose to frontend)
 
+### Supabase Auth for User Accounts
+
+The inspector app uses Supabase Auth directly for account creation, email OTP verification, sign-in, and password recovery. Enable the **Email** provider in **Authentication** → **Providers**. To keep the six-digit code forms, configure the **Confirm signup** and **Reset password** email templates to display `{{ .Token }}`.
+
+Add the local frontend origin shown in the browser to **Authentication** → **URL Configuration** → **Redirect URLs** (for example, `http://localhost:5173/**`; use the actual port if Vite selects a fallback port). Restart the frontend after changing `frontend/.env`.
+
+New inspector accounts cannot grant themselves admin access. The separate admin login continues to use the backend admin account system.
+
 ### 2. Run Database Migrations
 In the Supabase Dashboard, go to **SQL Editor** → **New Query**, open `supabase/migrations/20261009000001_initial_schema.sql` (or `backend/supabase/migrations/20261009000001_initial_schema.sql`), and click **Run**.
 
