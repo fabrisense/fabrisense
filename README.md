@@ -116,7 +116,7 @@ The SQLite database is pre-seeded with a default Administrator account for local
 | Field | Value |
 |---|---|
 | **Portal URL** | [http://localhost:5173/admin/login](http://localhost:5173/admin/login) |
-| **Email** | `admin@fabrisense.com` |
+| **Email** | `fabrisense.detect@gmail.com` |
 | **Password** | `Admin@123` |
 | **Role** | `Admin` (Rajesh Kumar - Operations Manager) |
 
@@ -269,7 +269,7 @@ The Vite development server starts on **`http://localhost:5173`**.
 
 - **Mobile / Inspector App**: Open [http://localhost:5173/](http://localhost:5173/)
 - **Admin Web Portal**: Open [http://localhost:5173/admin/login](http://localhost:5173/admin/login)
-  - Sign in using `admin@fabrisense.com` / `Admin@123`
+  - Sign in using `fabrisense.detect@gmail.com` / `Admin@123`
   - Explore Dashboard, Inspections, Defects Taxonomy, Quality Analytics, Users, Reports, Model, and Settings.
 
 ---

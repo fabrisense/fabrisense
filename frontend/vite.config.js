@@ -5,6 +5,7 @@ import { defineConfig } from 'vite'
 export default defineConfig({
   plugins: [react()],
   server: {
+    host: true,
     port: 5173,
     proxy: {
       // In browser dev mode, /api calls are proxied to the local backend.

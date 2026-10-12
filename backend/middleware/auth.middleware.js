@@ -31,7 +31,7 @@ export async function requireAdminAuth(req, res, next) {
             .eq('id', user.id)
             .single();
 
-          if (profile && profile.status === 'active') {
+          if (profile && profile.status === 'active' && profile.role === 'admin') {
             req.admin = {
               id: profile.id,
               name: profile.name,
@@ -41,6 +41,11 @@ export async function requireAdminAuth(req, res, next) {
             };
             req.user = req.admin;
             return next();
+          } else if (profile && profile.role !== 'admin') {
+            return res.status(403).json({
+              success: false,
+              error: 'Forbidden. Administrator privileges required.',
+            });
           }
         }
       } catch (_e) {
@@ -53,12 +58,12 @@ export async function requireAdminAuth(req, res, next) {
   try {
     const decoded = jwt.verify(token, JWT_SECRET);
     
-    // Check if admin still exists and is active
+    // Check if admin still exists, is active, and possesses the admin role
     const admin = db.prepare('SELECT id, name, email, role, status FROM admins WHERE id = ?').get(decoded.id);
-    if (!admin || admin.status !== 'active') {
+    if (!admin || admin.status !== 'active' || admin.role !== 'admin') {
       return res.status(401).json({
         success: false,
-        error: 'Admin account not found or deactivated.',
+        error: 'Admin account not found, deactivated, or unauthorized.',
       });
     }
 

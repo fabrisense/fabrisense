@@ -458,9 +458,9 @@ export function Dashboard({ userData = {}, onLogout }) {
     setInspections(updated);
     setDbStats(prev => ({
       ...prev,
-      totalInspections: (prev?.totalInspections || 1247) + 1,
-      defectsDetected: (prev?.defectsDetected || 523) + defectsCount,
-      gradeACount: cleanGrade === 'A' ? (prev?.gradeACount || 723) + 1 : (prev?.gradeACount || 723),
+      totalInspections: ((prev?.totalInspections ?? inspections.length) || 0) + 1,
+      defectsDetected: ((prev?.defectsDetected ?? 0) || 0) + defectsCount,
+      gradeACount: cleanGrade === 'A' ? ((prev?.gradeACount ?? 0) + 1) : (prev?.gradeACount ?? 0),
       lastActive: new Date().toISOString(),
     }));
     try { localStorage.setItem('fabrisense_inspections', JSON.stringify(updated)); }

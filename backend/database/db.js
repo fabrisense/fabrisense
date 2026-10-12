@@ -139,7 +139,7 @@ function seedDefaults(database) {
 
   insertAdmin.run(
     'Rajesh Kumar',
-    'admin@fabrisense.com',
+    'fabrisense.detect@gmail.com',
     adminPassHash,
     'admin',
     'active',
@@ -155,7 +155,7 @@ function seedDefaults(database) {
   `);
 
   const usersList = [
-    [1, 'Rajesh Kumar', 'admin@fabrisense.com', '+91 98765 43210', 'admin', 'active', '2024-01-01 09:00:00', '2026-09-05 10:15:00'],
+    [1, 'Rajesh Kumar', 'fabrisense.detect@gmail.com', '+91 98765 43210', 'admin', 'active', '2024-01-01 09:00:00', '2026-09-05 10:15:00'],
     [2, 'Anil Mehta', 'anil.mehta@petrosoft.in', '+91 98765 43211', 'inspector', 'active', '2024-01-10 09:00:00', '2026-09-05 09:42:00'],
     [3, 'Meera Sen', 'meera.sen@petrosoft.in', '+91 98765 43212', 'inspector', 'active', '2024-01-15 09:00:00', '2026-09-04 17:12:00'],
     [4, 'Aarav Sharma', 'aarav.sharma@petrosoft.in', '+91 98765 43213', 'inspector', 'active', '2024-02-01 09:00:00', '2026-09-05 10:25:00'],
@@ -194,7 +194,7 @@ function seedDefaults(database) {
 
   const defaultSettings = {
     companyName: 'FabriSense Industrial Textiles',
-    systemEmail: 'admin@fabrisense.com',
+    systemEmail: 'fabrisense.detect@gmail.com',
     notificationsEnabled: 'true',
     emailAlerts: 'true',
     autoApproveGradeA: 'true',

@@ -12,6 +12,7 @@ export function AdminDashboard() {
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
+  const [lastUpdated, setLastUpdated] = useState(() => new Date().toLocaleTimeString());
   const navigate = useNavigate();
 
   const loadData = async (silent = false) => {
@@ -21,6 +22,7 @@ export function AdminDashboard() {
       const res = await fetchDashboardMetrics();
       if (res.success) {
         setData(res.data);
+        setLastUpdated(new Date().toLocaleTimeString());
       }
     } catch (err) {
       console.error('Failed to load dashboard metrics:', err);
@@ -35,10 +37,18 @@ export function AdminDashboard() {
   useEffect(() => {
     loadData();
 
-    // 10-second polling fallback ensures data sync even if Realtime WebSockets are blocked/reconnecting
+    // 5-second polling fallback ensures rapid live data synchronization even if Realtime WebSockets are reconnecting
     const pollInterval = setInterval(() => {
       loadData(true);
-    }, 10000);
+    }, 5000);
+
+    // Refresh immediately when window or tab regains focus
+    const handleFocus = () => loadData(true);
+    const handleVisibility = () => {
+      if (!document.hidden) loadData(true);
+    };
+    window.addEventListener('focus', handleFocus);
+    document.addEventListener('visibilitychange', handleVisibility);
 
     // Realtime listeners: auto-refresh metrics when mobile or admin records change
     const unsubInspections = subscribeToInspections(() => {
@@ -52,6 +62,8 @@ export function AdminDashboard() {
 
     return () => {
       clearInterval(pollInterval);
+      window.removeEventListener('focus', handleFocus);
+      document.removeEventListener('visibilitychange', handleVisibility);
       unsubInspections();
       unsubDefects();
     };
@@ -140,6 +152,83 @@ export function AdminDashboard() {
 
   return (
     <div style={{ maxWidth: '1440px', margin: '0 auto' }}>
+      {/* ── REALTIME & AUTO-SYNC STATUS BAR ── */}
+      <div
+        style={{
+          display: 'flex',
+          justifyContent: 'space-between',
+          alignItems: 'center',
+          backgroundColor: '#ffffff',
+          padding: '12px 18px',
+          borderRadius: '12px',
+          border: '1px solid #e2e8f0',
+          marginBottom: '20px',
+        }}
+      >
+        <div style={{ display: 'flex', alignItems: 'center', gap: '12px', flexWrap: 'wrap' }}>
+          <div
+            style={{
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: '6px',
+              padding: '4px 10px',
+              borderRadius: '20px',
+              backgroundColor: data?.driver === 'supabase' ? '#ecfdf5' : '#f0f9ff',
+              color: data?.driver === 'supabase' ? '#059669' : '#0284c7',
+              fontSize: '12px',
+              fontWeight: '700',
+              border: `1px solid ${data?.driver === 'supabase' ? '#a7f3d0' : '#bae6fd'}`,
+            }}
+          >
+            <span
+              style={{
+                width: '8px',
+                height: '8px',
+                borderRadius: '50%',
+                backgroundColor: data?.driver === 'supabase' ? '#10b981' : '#0ea5e9',
+                boxShadow: '0 0 6px rgba(16,185,129,0.5)',
+              }}
+            />
+            <span>
+              {data?.driver === 'supabase'
+                ? 'Supabase Cloud PostgreSQL • Realtime Active'
+                : 'Local SQLite Fallback • Auto-Polling Active'}
+            </span>
+          </div>
+
+          <span style={{ fontSize: '12px', color: '#64748b' }}>
+            Last synchronized: <strong style={{ color: '#1e293b' }}>{lastUpdated}</strong>
+          </span>
+
+          <span style={{ fontSize: '12px', color: '#059669', fontWeight: '600' }}>
+            Today: <strong style={{ color: '#1f2a44' }}>{kpis?.inspectionsToday ?? 0}</strong> new inspections completed
+          </span>
+        </div>
+
+        <button
+          onClick={() => loadData()}
+          disabled={loading}
+          style={{
+            display: 'inline-flex',
+            alignItems: 'center',
+            gap: '6px',
+            padding: '6px 14px',
+            borderRadius: '8px',
+            border: '1px solid #cbd5e1',
+            backgroundColor: '#ffffff',
+            color: '#334155',
+            fontSize: '12.5px',
+            fontWeight: '600',
+            cursor: 'pointer',
+            transition: 'background-color 0.15s',
+          }}
+          title="Force refresh live metrics from database"
+        >
+          <RefreshCw size={13} className={loading ? 'animate-spin' : ''} />
+          <span>Refresh Live Data</span>
+        </button>
+      </div>
+
       {/* ── 6 KPI CARDS ── */}
       <div
         style={{
@@ -158,7 +247,7 @@ export function AdminDashboard() {
             {totalInspectionsCount.toLocaleString()}
           </div>
           <div style={{ fontSize: '11.5px', fontWeight: '600', color: '#16a34a' }}>
-            {totalInspectionsCount > 0 ? 'Live synced records' : 'No inspections recorded'}
+            {kpis?.inspectionsToday ? `${kpis.inspectionsToday} today` : '0 today'} • {totalInspectionsCount > 0 ? 'Live synced' : 'No records'}
           </div>
         </div>
 

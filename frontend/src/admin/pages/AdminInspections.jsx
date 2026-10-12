@@ -74,11 +74,18 @@ export function AdminInspections() {
     loadInspections();
   }, [search, grade, status, userId, page]);
 
-  // Realtime subscription + 10s polling fallback for live inspection stream
+  // Realtime subscription + 5s polling fallback for live inspection stream
   useEffect(() => {
     const pollInterval = setInterval(() => {
       loadInspections(true);
-    }, 10000);
+    }, 5000);
+
+    const handleFocus = () => loadInspections(true);
+    const handleVisibility = () => {
+      if (!document.hidden) loadInspections(true);
+    };
+    window.addEventListener('focus', handleFocus);
+    document.addEventListener('visibilitychange', handleVisibility);
 
     const unsub = subscribeToInspections(() => {
       console.log('[Realtime] Inspection list change detected, reloading...');
@@ -87,6 +94,8 @@ export function AdminInspections() {
 
     return () => {
       clearInterval(pollInterval);
+      window.removeEventListener('focus', handleFocus);
+      document.removeEventListener('visibilitychange', handleVisibility);
       unsub();
     };
   }, [search, grade, status, userId, page]);

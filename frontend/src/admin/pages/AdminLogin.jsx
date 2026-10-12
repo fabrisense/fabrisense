@@ -32,11 +32,11 @@ export function AdminLogin() {
     } catch (err) {
       console.warn('Backend login notice:', err);
       // Seamless demo fallback if backend server is not running
-      if (email.trim().toLowerCase() === 'admin@fabrisense.com' && password === 'Admin@123') {
+      if (email.trim().toLowerCase() === 'fabrisense.detect@gmail.com' && password === 'Admin@123') {
         setAdminAuth('demo_admin_jwt_token', {
           id: 1,
           name: 'Rajesh Kumar',
-          email: 'admin@fabrisense.com',
+          email: 'fabrisense.detect@gmail.com',
           role: 'admin',
         });
         navigate(from, { replace: true });
@@ -49,7 +49,7 @@ export function AdminLogin() {
   };
 
   const handleFillDemo = () => {
-    setEmail('admin@fabrisense.com');
+    setEmail('fabrisense.detect@gmail.com');
     setPassword('Admin@123');
     setError(null);
   };
@@ -194,7 +194,7 @@ export function AdminLogin() {
               />
               <input
                 type="email"
-                placeholder="admin@fabrisense.com"
+                placeholder="fabrisense.detect@gmail.com"
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
                 required
@@ -304,7 +304,7 @@ export function AdminLogin() {
               href="#forgot"
               onClick={(e) => {
                 e.preventDefault();
-                alert('For demo environment, use default credentials: admin@fabrisense.com / Admin@123');
+                alert('For demo environment, use default credentials: fabrisense.detect@gmail.com / Admin@123');
               }}
               style={{ color: '#208c7d', textDecoration: 'none', fontWeight: '500' }}
             >

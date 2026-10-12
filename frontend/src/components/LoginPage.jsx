@@ -294,7 +294,7 @@ export function LoginPage({ onLoginSuccess, onBack, theme = 'green' }) {
       const isAdminLogin = isBlue;
 
       // 1. Built-in system administrator verification
-      if (lowerEmail === 'admin@fabrisense.com') {
+      if (lowerEmail === 'fabrisense.detect@gmail.com') {
         if (pwd === 'Admin@123') {
           const adminProfile = {
             name: 'Rajesh Kumar',
@@ -564,7 +564,7 @@ export function LoginPage({ onLoginSuccess, onBack, theme = 'green' }) {
         } catch (sbErr) {
           const stored = getStoredUsers();
           const exists = stored.find(u => u.email.toLowerCase() === email.toLowerCase());
-          if (!exists && email.toLowerCase() !== 'inspector@weavesofindia.com' && email.toLowerCase() !== 'admin@fabrisense.com') {
+          if (!exists && email.toLowerCase() !== 'inspector@weavesofindia.com' && email.toLowerCase() !== 'fabrisense.detect@gmail.com') {
             throw new Error('No registered account found with this email. Please check the address or sign up.');
           }
           throw new Error(backendErr?.message || sbErr?.message || 'Failed to send 6-digit code. Please try again.');
@@ -885,7 +885,7 @@ export function LoginPage({ onLoginSuccess, onBack, theme = 'green' }) {
                       type="text"
                       inputMode="email"
                       autoComplete="email"
-                      placeholder={isBlue ? "admin@fabrisense.com" : "inspector@weavesofindia.com"}
+                      placeholder={isBlue ? "fabrisense.detect@gmail.com" : "inspector@weavesofindia.com"}
                       value={loginEmail}
                       onChange={e => { setLoginErr(''); setLoginEmail(e.target.value); }}
                       spellCheck={false}

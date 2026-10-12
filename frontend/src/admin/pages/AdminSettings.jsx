@@ -16,7 +16,7 @@ import { fetchSettings, updateSettingsApi } from '../../services/adminApi';
 export function AdminSettings() {
   const [settings, setSettings] = useState({
     companyName: 'FabriSense Industrial Textiles',
-    systemEmail: 'admin@fabrisense.com',
+    systemEmail: 'fabrisense.detect@gmail.com',
     notificationsEnabled: 'true',
     emailAlerts: 'true',
     autoApproveGradeA: 'true',

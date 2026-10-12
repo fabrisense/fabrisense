@@ -60,7 +60,7 @@ async function runTests() {
   // 2. Invalid Admin Login
   const badLogin = await request('/admin/login', {
     method: 'POST',
-    body: { email: 'admin@fabrisense.com', password: 'WrongPassword' },
+    body: { email: 'fabrisense.detect@gmail.com', password: 'WrongPassword' },
   });
   console.assert(badLogin.status === 401, 'Bad login did not return 401');
   console.log('✓ 2. Invalid admin credentials correctly rejected (401).');
@@ -68,7 +68,7 @@ async function runTests() {
   // 3. Valid Admin Login
   const goodLogin = await request('/admin/login', {
     method: 'POST',
-    body: { email: 'admin@fabrisense.com', password: 'Admin@123' },
+    body: { email: 'fabrisense.detect@gmail.com', password: 'Admin@123' },
   });
   console.assert(goodLogin.status === 200 && goodLogin.data.token, 'Admin login failed');
   token = goodLogin.data.token;

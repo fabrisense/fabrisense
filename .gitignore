@@ -38,3 +38,9 @@ fabrisense/
 /database/
 backend/uploads/
 uploads/
+
+# Android local configuration
+local.properties
+/android/local.properties
+android/app/build/
+android/.gradle/

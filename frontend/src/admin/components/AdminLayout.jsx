@@ -39,7 +39,7 @@ export function AdminLayout() {
   const location = useLocation();
   const adminUser = getAdminUser() || {
     name: 'Rajesh Kumar',
-    email: 'admin@fabrisense.com',
+    email: 'fabrisense.detect@gmail.com',
     role: 'Operations Manager',
   };
 

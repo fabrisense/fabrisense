@@ -6,6 +6,7 @@ import {
 } from "lucide-react";
 import logoImg from "../assets/logo.jpg";
 import { fetchInspectionStats, fetchInspectionsList } from "../services/api";
+import { subscribeToInspections, subscribeToDefects } from "../services/supabase";
 
 const INSPECTIONS_KEY = "fabrisense_inspections";
 
@@ -112,7 +113,7 @@ export function AdminDashboard({ userData = {}, onLogout, onUpdateUserData }) {
     } catch {}
     return {
       name: saved?.name || userData?.name || "Rajesh Kumar",
-      email: saved?.email || userData?.email || "admin@fabrisense.com",
+      email: saved?.email || userData?.email || "fabrisense.detect@gmail.com",
       phone: saved?.phone || userData?.phone || "+91 98765 43210",
       role: saved?.role || userData?.role || "Administrator",
       department: saved?.department || "Operations & Quality Control",
@@ -209,7 +210,7 @@ export function AdminDashboard({ userData = {}, onLogout, onUpdateUserData }) {
             id: item.inspection_id || item.id,
             title: item.fabric_name || item.fabric_type || 'Fabric Roll',
             fabric: item.fabric_type || item.fabric_name || 'Cotton Blend',
-            date: item.inspection_date ? item.inspection_date.slice(0, 10) : '2026-09-05',
+            date: item.inspection_date ? item.inspection_date.slice(0, 10) : new Date().toISOString().slice(0, 10),
             grade: item.grade || 'B',
             defects: item.defect_count ?? (item.defects?.length || 0),
             status: item.status || 'Passed',
@@ -228,10 +229,23 @@ export function AdminDashboard({ userData = {}, onLogout, onUpdateUserData }) {
     };
 
     loadAllData();
-    const t = setInterval(loadAllData, 15000);
+    const t = setInterval(loadAllData, 5000);
+
+    const handleFocus = () => loadAllData();
+    const handleVisibility = () => { if (!document.hidden) loadAllData(); };
+    window.addEventListener('focus', handleFocus);
+    document.addEventListener('visibilitychange', handleVisibility);
+
+    const unsubInsp = subscribeToInspections(() => loadAllData());
+    const unsubDef = subscribeToDefects(() => loadAllData());
+
     return () => {
       isMounted = false;
       clearInterval(t);
+      window.removeEventListener('focus', handleFocus);
+      document.removeEventListener('visibilitychange', handleVisibility);
+      unsubInsp();
+      unsubDef();
     };
   }, []);
 
@@ -268,12 +282,12 @@ export function AdminDashboard({ userData = {}, onLogout, onUpdateUserData }) {
 
   const computed = computeStats(inspections);
   const stats = {
-    total: dbStats?.totalInspections ?? (computed.total || 1247),
-    withDefects: dbStats?.defectsDetected ?? (computed.withDefects || 523),
-    defectFree: dbStats?.defectFree ?? (computed.defectFree || 724),
-    gradeA: dbStats?.gradeACount ?? dbStats?.gradeA ?? (computed.gradeA || 723),
-    gradeB: dbStats?.gradeBCount ?? dbStats?.gradeB ?? (computed.gradeB || 386),
-    gradeC: dbStats?.gradeCCount ?? dbStats?.gradeC ?? (computed.gradeC || 138),
+    total: dbStats?.totalInspections ?? (computed.total ?? 0),
+    withDefects: dbStats?.defectsDetected ?? (computed.withDefects ?? 0),
+    defectFree: dbStats?.defectFree ?? (computed.defectFree ?? 0),
+    gradeA: dbStats?.gradeACount ?? dbStats?.gradeA ?? (computed.gradeA ?? 0),
+    gradeB: dbStats?.gradeBCount ?? dbStats?.gradeB ?? (computed.gradeB ?? 0),
+    gradeC: dbStats?.gradeCCount ?? dbStats?.gradeC ?? (computed.gradeC ?? 0),
   };
 
   const filtered = inspections.filter(item => {
