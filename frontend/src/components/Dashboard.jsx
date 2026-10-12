@@ -9,8 +9,8 @@ import {
   Printer, Copy, Award, Tag
 } from 'lucide-react';
 import jsPDF from 'jspdf';
-import { InspectionResultFlow, DEFECT_DATA } from './InspectionResultFlow';
-import { syncInspectionRecord, fetchInspectionsList, fetchInspectionStats, analyzeFabricImage } from '../services/api';
+import { InspectionResultFlow } from './InspectionResultFlow';
+import { syncInspectionRecord, fetchInspectionsList, analyzeFabricImage, analyzeLiveFabricFrame } from '../services/api';
 import kanchipuramSilk from '../assets/kanchipuram_silk.jpg';
 import indigoDenim from '../assets/indigo_denim.jpg';
 
@@ -24,12 +24,15 @@ const ANALYSIS_STEPS = [
 
 export function Dashboard({ userData = {}, onLogout }) {
   const [activeTab, setActiveTab] = useState('home');
+  const inspectorEmail = (userData?.email || '').trim().toLowerCase();
+  const inspectionStorageKey = inspectorEmail
+    ? `fabrisense_inspections:${inspectorEmail}`
+    : null;
 
   // ── Inspect flow: 'idle' | 'camera' | 'analyzing' | 'results_flow'
   const [inspectPhase, setInspectPhase]         = useState('idle');
   const [analysisStep, setAnalysisStep]         = useState(-1);
   const [capturedImage, setCapturedImage]       = useState(null);
-  const [scanResult, setScanResult]             = useState(null);
   // 'defects_found' | 'no_defects' | 'invalid_image'
   const [analysisResultType, setAnalysisResultType] = useState('defects_found');
   const [analysisDefectData, setAnalysisDefectData] = useState(null);
@@ -40,16 +43,35 @@ export function Dashboard({ userData = {}, onLogout }) {
   const [isCameraLoading, setIsCameraLoading] = useState(false);
   const [facingMode, setFacingMode]   = useState('environment');
   const [isShutterActive, setIsShutterActive] = useState(false);
+  const [isLiveDetecting, setIsLiveDetecting] = useState(false);
+  const [liveDefects, setLiveDefects] = useState([]);
+  const [liveDetectionError, setLiveDetectionError] = useState('');
+  const [liveAiMode, setLiveAiMode] = useState('');
   const videoRef  = useRef(null);
   const streamRef = useRef(null);
+  const liveFrameInFlightRef = useRef(false);
+  const liveDetectionSessionRef = useRef(0);
 
   const cameraInputRef = useRef(null);
   const uploadInputRef = useRef(null);
 
   const [inspections, setInspections] = useState(() => {
+    if (!inspectionStorageKey) return [];
     try {
-      const saved = localStorage.getItem('fabrisense_inspections');
-      return saved ? JSON.parse(saved) : [];
+      const saved = localStorage.getItem(inspectionStorageKey);
+      if (saved) {
+        const records = JSON.parse(saved);
+        return Array.isArray(records) ? records : [];
+      }
+
+      const legacy = JSON.parse(localStorage.getItem('fabrisense_inspections') || '[]');
+      const userRecords = Array.isArray(legacy)
+        ? legacy.filter((record) => record.inspectorEmail?.trim().toLowerCase() === inspectorEmail)
+        : [];
+      if (userRecords.length > 0) {
+        localStorage.setItem(inspectionStorageKey, JSON.stringify(userRecords));
+      }
+      return userRecords;
     } catch (e) {
       return [];
     }
@@ -59,7 +81,6 @@ export function Dashboard({ userData = {}, onLogout }) {
   const [historyFilter, setHistoryFilter] = useState('all'); // 'all' | 'grade_a' | 'with_defects'
   const [expandedDetailDefects, setExpandedDetailDefects] = useState({});
   const [copyDetailToast, setCopyDetailToast] = useState(false);
-  const [dbStats, setDbStats] = useState(null);
 
   // ── Profile State & Settings Modals ──
   const [profileUser, setProfileUser] = useState(() => {
@@ -174,26 +195,35 @@ export function Dashboard({ userData = {}, onLogout }) {
     showToast(`Language set to ${lang}`);
   };
 
-  // Fetch latest shared inspections and real database KPI stats from backend on mount
+  // Fetch this inspector's own inspection history; dashboard totals derive from these records.
   useEffect(() => {
     let isMounted = true;
     const fetchSharedInspections = async () => {
-      try {
-        // 1. Fetch live aggregate KPI metrics from database
-        try {
-          const statsRes = await fetchInspectionStats();
-          if (statsRes && statsRes.success && statsRes.data?.kpis && isMounted) {
-            setDbStats(statsRes.data.kpis);
-          }
-        } catch (sErr) {
-          console.warn('Could not fetch inspection stats:', sErr);
-        }
+      if (!inspectorEmail) {
+        setInspections([]);
+        return;
+      }
 
-        // 2. Fetch shared inspection records
-        const result = await fetchInspectionsList();
-        if (result && result.success && Array.isArray(result.data) && isMounted) {
-          if (result.data.length > 0) {
-            const mapped = result.data.map((item) => {
+      try {
+        const records = [];
+        let page = 1;
+        let totalPages = 1;
+        do {
+          const result = await fetchInspectionsList({
+            inspectorEmail,
+            limit: 100,
+            page,
+          });
+          if (!result?.success || !Array.isArray(result.data)) {
+            throw new Error('The inspection history response was invalid.');
+          }
+          records.push(...result.data);
+          totalPages = result.pagination?.totalPages || 1;
+          page += 1;
+        } while (page <= totalPages);
+
+        if (isMounted) {
+          const mapped = records.map((item) => {
               const cleanGrade = (item.grade || 'B').replace(/^GRADE\s*/i, '').trim();
               let parsedDefects = [];
               if (Array.isArray(item.defects)) {
@@ -225,42 +255,30 @@ export function Dashboard({ userData = {}, onLogout }) {
                 status: item.status || (cleanGrade === 'A' ? 'Passed' : cleanGrade === 'B' ? 'Review' : 'Failed'),
                 image: resolvedImage,
                 imagePath: item.image_path || '/assets/indigo_denim.jpg',
-                overallSummary: item.overall_summary || 'Inspection completed and verified.',
-                aiExplanation: item.ai_explanation || item.overall_summary || (cleanGrade === 'A'
-                  ? 'Fabric surface inspected under multi-spectrum lighting. Zero weave flaws detected.'
-                  : DEFECT_DATA.aiExplanation),
-                gradeExplanation: cleanGrade === 'A'
-                  ? 'Batch meets zero-defect criteria with uniform weave tension.'
-                  : DEFECT_DATA.gradeExplanation,
-                recommendedAction: item.recommended_action || (cleanGrade === 'A'
-                  ? 'Approved for production.'
-                  : 'Flag roll section for quality review.'),
-                inspectorName: item.inspector_name || 'Rajesh Kumar',
-                inspectorEmail: item.inspector_email || 'inspector@fabrisense.com',
-                defectsList: Array.isArray(parsedDefects) && parsedDefects.length > 0 ? parsedDefects : (cleanGrade === 'A' || itemDefectCount === 0 ? [] : DEFECT_DATA.defects),
+                overallSummary: item.overall_summary || '',
+                aiExplanation: item.ai_explanation || item.overall_summary || '',
+                gradeExplanation: item.grade_explanation || '',
+                recommendedAction: item.recommended_action || '',
+                inspectorName: item.inspector_name || userData?.name || '',
+                inspectorEmail: item.inspector_email || inspectorEmail,
+                defectsList: parsedDefects,
                 raw: item,
               };
-            });
-            setInspections((prev) => {
-              const existingIds = new Set(prev.map(p => p.id));
-              const merged = [...prev];
-              mapped.forEach(m => {
-                if (!existingIds.has(m.id)) {
-                  merged.push(m);
-                }
-              });
-              try { localStorage.setItem('fabrisense_inspections', JSON.stringify(merged)); } catch (_) {}
-              return merged;
-            });
+            }).sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+          setInspections(mapped);
+          try {
+            localStorage.setItem(inspectionStorageKey, JSON.stringify(mapped));
+          } catch (storageError) {
+            console.error('Failed to cache this user inspection history:', storageError);
           }
         }
       } catch (err) {
-        console.warn('Failed to fetch shared inspections:', err);
+        console.warn('Failed to fetch this user inspection history:', err);
       }
     };
-    fetchSharedInspections();
+    void fetchSharedInspections();
     return () => { isMounted = false; };
-  }, []);
+  }, [inspectionStorageKey, inspectorEmail, userData?.name]);
 
   // ── Live Camera Management ──
   const stopLiveCamera = () => {
@@ -274,14 +292,20 @@ export function Dashboard({ userData = {}, onLogout }) {
     setIsCameraLoading(false);
   };
 
-  const startLiveCamera = async (mode = facingMode) => {
+  const startLiveCamera = async (mode = facingMode, enableLiveDetection = false) => {
+    liveDetectionSessionRef.current += 1;
     stopLiveCamera();
     setCameraError(null);
+    setLiveDetectionError('');
+    setLiveDefects([]);
+    setLiveAiMode('');
+    setIsLiveDetecting(enableLiveDetection);
     setIsCameraLoading(true);
     setInspectPhase('camera');
 
     if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
       setCameraError('Camera API is not supported on this browser/environment.');
+      setIsLiveDetecting(false);
       setIsCameraLoading(false);
       return;
     }
@@ -317,6 +341,7 @@ export function Dashboard({ userData = {}, onLogout }) {
       }
     } catch (err) {
       console.error('Camera access error:', err);
+      setIsLiveDetecting(false);
       setIsCameraLoading(false);
       if (err.name === 'NotAllowedError' || err.name === 'PermissionDeniedError') {
         setCameraError('Camera access was blocked. Please allow camera permissions in your browser or address bar, then click Try Again.');
@@ -340,6 +365,111 @@ export function Dashboard({ userData = {}, onLogout }) {
     }
   }, [cameraStream, inspectPhase]);
 
+  // Sample camera frames sequentially and display detections from the backend YOLO service.
+  useEffect(() => {
+    if (inspectPhase !== 'camera' || !cameraStream || !isLiveDetecting) return undefined;
+
+    const sessionId = liveDetectionSessionRef.current;
+    let cancelled = false;
+    const detectFrame = async () => {
+      const video = videoRef.current;
+      if (
+        cancelled ||
+        sessionId !== liveDetectionSessionRef.current ||
+        liveFrameInFlightRef.current ||
+        !video ||
+        video.readyState < HTMLMediaElement.HAVE_CURRENT_DATA ||
+        !video.videoWidth ||
+        !video.videoHeight
+      ) return;
+
+      liveFrameInFlightRef.current = true;
+      try {
+        const frameWidth = 640;
+        const viewfinder = video.parentElement;
+        const frameRatio = viewfinder?.clientWidth && viewfinder.clientHeight
+          ? viewfinder.clientWidth / viewfinder.clientHeight
+          : video.videoWidth / video.videoHeight;
+        const sourceRatio = video.videoWidth / video.videoHeight;
+        let sourceX = 0;
+        let sourceY = 0;
+        let sourceWidth = video.videoWidth;
+        let sourceHeight = video.videoHeight;
+
+        if (sourceRatio > frameRatio) {
+          sourceWidth = video.videoHeight * frameRatio;
+          sourceX = (video.videoWidth - sourceWidth) / 2;
+        } else {
+          sourceHeight = video.videoWidth / frameRatio;
+          sourceY = (video.videoHeight - sourceHeight) / 2;
+        }
+
+        const canvas = document.createElement('canvas');
+        canvas.width = frameWidth;
+        canvas.height = Math.round(frameWidth / frameRatio);
+        const context = canvas.getContext('2d');
+        if (!context) throw new Error('Unable to prepare the camera frame for detection.');
+        context.drawImage(
+          video,
+          sourceX,
+          sourceY,
+          sourceWidth,
+          sourceHeight,
+          0,
+          0,
+          canvas.width,
+          canvas.height,
+        );
+        const frame = await new Promise((resolve, reject) => {
+          canvas.toBlob(
+            (blob) => blob ? resolve(blob) : reject(new Error('Unable to encode camera frame.')),
+            'image/jpeg',
+            0.75,
+          );
+        });
+        const response = await analyzeLiveFabricFrame(frame, { fabricType: 'Handloom Cotton-Silk Blend' });
+        if (cancelled || sessionId !== liveDetectionSessionRef.current) return;
+
+        const detections = Array.isArray(response?.data?.defects) ? response.data.defects : [];
+        setLiveDefects(detections.map((defect, index) => {
+          const position = (value, dimension) => {
+            const number = Number(value) || 0;
+            return number <= 1 ? number * 100 : number <= 100 ? number : number / dimension * 100;
+          };
+          const width = Math.min(100, Math.max(0, position(defect.width, canvas.width)));
+          const height = Math.min(100, Math.max(0, position(defect.height, canvas.height)));
+          const detectedX = Math.min(100 - width, Math.max(0, position(defect.x ?? defect.left, canvas.width)));
+          return {
+            id: defect.id || index,
+            type: defect.type || defect.class_name || defect.label || 'Defect',
+            confidence: Number(defect.confidence) || 0,
+            x: facingMode === 'user' ? 100 - detectedX - width : detectedX,
+            y: Math.min(100 - height, Math.max(0, position(defect.y ?? defect.top, canvas.height))),
+            width,
+            height,
+          };
+        }));
+        setLiveAiMode(response?.data?.aiMode || 'unknown');
+        setLiveDetectionError('');
+      } catch (error) {
+        if (!cancelled && sessionId === liveDetectionSessionRef.current) {
+          console.error('[Live Detection] Frame analysis failed:', error);
+          setLiveDetectionError(error.message || 'Live detection failed. Check the AI service and try again.');
+          setIsLiveDetecting(false);
+        }
+      } finally {
+        liveFrameInFlightRef.current = false;
+      }
+    };
+
+    void detectFrame();
+    const intervalId = window.setInterval(detectFrame, 1800);
+    return () => {
+      cancelled = true;
+      window.clearInterval(intervalId);
+    };
+  }, [cameraStream, facingMode, inspectPhase, isLiveDetecting]);
+
   // Clean up camera stream when component unmounts
   useEffect(() => {
     return () => {
@@ -351,7 +481,16 @@ export function Dashboard({ userData = {}, onLogout }) {
   const handleToggleFacingMode = () => {
     const nextMode = facingMode === 'environment' ? 'user' : 'environment';
     setFacingMode(nextMode);
-    startLiveCamera(nextMode);
+    startLiveCamera(nextMode, isLiveDetecting);
+  };
+
+  const handleToggleLiveDetection = () => {
+    const nextEnabled = !isLiveDetecting;
+    liveDetectionSessionRef.current += 1;
+    setLiveDefects([]);
+    setLiveDetectionError('');
+    setLiveAiMode('');
+    setIsLiveDetecting(nextEnabled);
   };
 
   // Capture snapshot frame from live video stream
@@ -361,6 +500,9 @@ export function Dashboard({ userData = {}, onLogout }) {
     setTimeout(() => {
       try {
         const video = videoRef.current;
+        if (!video || !video.videoWidth || !video.videoHeight) {
+          throw new Error('The camera is not ready to capture a frame.');
+        }
         const canvas = document.createElement('canvas');
         canvas.width = video.videoWidth || 640;
         canvas.height = video.videoHeight || 480;
@@ -371,17 +513,23 @@ export function Dashboard({ userData = {}, onLogout }) {
         }
         ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
         const dataUrl = canvas.toDataURL('image/jpeg', 0.92);
+        liveDetectionSessionRef.current += 1;
+        setIsLiveDetecting(false);
         stopLiveCamera();
         setIsShutterActive(false);
         runAnalysis(dataUrl);
       } catch (e) {
         console.error('Capture frame error:', e);
+        setCameraError(e.message || 'Unable to capture a frame from the camera.');
         setIsShutterActive(false);
       }
     }, 150);
   };
 
   const handleCloseCamera = () => {
+    liveDetectionSessionRef.current += 1;
+    setIsLiveDetecting(false);
+    setLiveDefects([]);
     stopLiveCamera();
     setInspectPhase('idle');
   };
@@ -392,7 +540,6 @@ export function Dashboard({ userData = {}, onLogout }) {
     setCapturedImage(imageUrl);
     setInspectPhase('analyzing');
     setAnalysisStep(0);
-    setScanResult(null);
 
     // Call real AI defect detection endpoint
     try {
@@ -476,9 +623,9 @@ export function Dashboard({ userData = {}, onLogout }) {
         setAnalysisResultType('no_defects');
       }
     } catch (analysisErr) {
-      console.warn('[FabriSense] API analysis fallback to default defect data:', analysisErr.message);
-      setAnalysisDefectData(DEFECT_DATA);
-      setAnalysisResultType('defects_found');
+      console.error('[FabriSense] Fabric analysis failed:', analysisErr);
+      setAnalysisDefectData(null);
+      setAnalysisResultType('invalid_image');
     }
   };
 
@@ -502,7 +649,12 @@ export function Dashboard({ userData = {}, onLogout }) {
       : `INS-${new Date().getFullYear()}-${Math.floor(1000 + Math.random() * 9000)}`;
 
     const cleanGrade = (record?.grade || 'GRADE B').replace(/^GRADE\s*/i, '').trim() || 'B';
-    const defectsCount = typeof record?.defects === 'number' ? record.defects : (cleanGrade === 'A' ? 0 : 3);
+    const defectsList = Array.isArray(record?.defectsList)
+      ? record.defectsList
+      : (Array.isArray(analysisDefectData?.defects) ? analysisDefectData.defects : []);
+    const defectsCount = typeof record?.defects === 'number'
+      ? Math.max(0, record.defects)
+      : Math.max(0, Number(record?.totalDefects) || defectsList.length);
     const fabricTitle = record?.title || record?.fabricType || (cleanGrade === 'A' ? 'Pure Silk Weave' : 'Handloom Cotton-Silk Blend');
 
     const newRecord = {
@@ -518,42 +670,27 @@ export function Dashboard({ userData = {}, onLogout }) {
       type: fabricTitle.toLowerCase().includes('denim') ? 'denim' : 'silk',
       status: cleanGrade === 'A' ? 'Passed' : cleanGrade === 'B' ? 'Review' : 'Failed',
       severityScale: record?.severityScale || (cleanGrade === 'A' ? 'None' : 'Moderate'),
-      mainIssues: record?.mainIssues || (cleanGrade === 'A' ? 'None' : 'Stain, Hole, Broken Yarn'),
-      overallSummary: record?.overallSummary || (cleanGrade === 'A'
-        ? 'High quality fabric scan passed zero-defect benchmark. Fiber uniformity and weave tension conform to Grade A specifications.'
-        : 'Fabric optical scan detected minor and moderate surface imperfections. Structural integrity is preserved with manual review recommended.'),
-      aiExplanation: record?.aiExplanation || (cleanGrade === 'A'
-        ? 'Fabric surface inspected under multi-spectrum lighting. Warp and weft threads exhibit zero flaws, uniform tension, and zero blemishes.'
-        : DEFECT_DATA.aiExplanation),
-      gradeExplanation: record?.gradeExplanation || (cleanGrade === 'A'
-        ? 'Fabric passed zero-defect benchmark with exceptional weave integrity.'
-        : DEFECT_DATA.gradeExplanation),
-      recommendedAction: record?.recommendedAction || (cleanGrade === 'A'
-        ? 'Batch approved for production & premium export certification.'
-        : 'Flag roll section for cutting or mend with micro-stitching if permitted.'),
-      defectsList: Array.isArray(record?.defectsList) ? record.defectsList : (cleanGrade === 'A' ? [] : DEFECT_DATA.defects),
-      inspectorName: userData?.name || profileUser?.name || 'Rajesh Kumar',
-      inspectorEmail: userData?.email || profileUser?.email || 'inspector@fabrisense.com',
+      mainIssues: record?.mainIssues || (defectsCount === 0 ? 'None detected' : defectsList.map((defect) => defect.name || defect.type || 'Defect').join(', ')),
+      overallSummary: record?.overallSummary || record?.aiExplanation || '',
+      aiExplanation: record?.aiExplanation || '',
+      gradeExplanation: record?.gradeExplanation || '',
+      recommendedAction: record?.recommendedAction || '',
+      defectsList,
+      inspectorName: userData?.name || profileUser?.name || '',
+      inspectorEmail,
     };
 
-    // Increment inspections count by 1!
     const updated = [newRecord, ...inspections];
     setInspections(updated);
-    setDbStats(prev => ({
-      ...prev,
-      totalInspections: ((prev?.totalInspections ?? inspections.length) || 0) + 1,
-      defectsDetected: ((prev?.defectsDetected ?? 0) || 0) + defectsCount,
-      gradeACount: cleanGrade === 'A' ? ((prev?.gradeACount ?? 0) + 1) : (prev?.gradeACount ?? 0),
-      lastActive: new Date().toISOString(),
-    }));
-    try { localStorage.setItem('fabrisense_inspections', JSON.stringify(updated)); }
-    catch (e) { console.error(e); }
+    if (inspectionStorageKey) {
+      try { localStorage.setItem(inspectionStorageKey, JSON.stringify(updated)); }
+      catch (e) { console.error('Failed to save inspection history for this user:', e); }
+    }
 
     // Close inspect phase and immediately show history!
     setInspectPhase('idle');
     setAnalysisStep(-1);
     setCapturedImage(null);
-    setScanResult(null);
     setActiveTab('history');
     setSelectedInspection(newRecord); // Make all related contents immediately visible!
     showToast(`Inspection ${assignedId} saved! Total inspections updated (+1).`);
@@ -593,64 +730,6 @@ export function Dashboard({ userData = {}, onLogout }) {
     if (!file) return;
     runAnalysis(URL.createObjectURL(file));
     e.target.value = '';
-  };
-
-  // ── Save result to history (fallback direct save) ──
-  const handleSaveBatch = async () => {
-    const assignedId = `INS-${new Date().getFullYear()}-${Math.floor(1000 + Math.random() * 9000)}`;
-    const newRecord = {
-      id: assignedId,
-      title: scanResult?.fabric || 'Pure Silk Weave',
-      fabricType: scanResult?.fabric || 'Pure Silk Weave',
-      time: `Today • ${new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`,
-      date: new Date().toISOString(),
-      grade: scanResult?.grade || 'GRADE A',
-      defects: scanResult?.defects || 0,
-      image: capturedImage || kanchipuramSilk,
-      imagePath: capturedImage || '/assets/indigo_denim.jpg',
-      type: 'silk',
-      status: 'Passed',
-      severityScale: 'None',
-      mainIssues: 'None detected',
-      overallSummary: 'Fabric batch passed zero-defect standard.',
-      aiExplanation: 'Fabric surface inspected under multi-spectrum lighting. Warp and weft threads exhibit zero flaws.',
-      gradeExplanation: 'Batch passed zero-defect benchmark with exceptional weave integrity.',
-      recommendedAction: 'Approved for production.',
-      defectsList: [],
-      inspectorName: userData?.name || profileUser?.name || 'Rajesh Kumar',
-      inspectorEmail: userData?.email || profileUser?.email || 'inspector@fabrisense.com',
-    };
-    const updated = [newRecord, ...inspections];
-    setInspections(updated);
-    try { localStorage.setItem('fabrisense_inspections', JSON.stringify(updated)); }
-    catch (e) { console.error(e); }
-
-    setInspectPhase('idle');
-    setAnalysisStep(-1);
-    setCapturedImage(null);
-    setScanResult(null);
-    setActiveTab('history');
-    setSelectedInspection(newRecord);
-    showToast(`Inspection ${assignedId} saved! Added to history (+1)`);
-
-    try {
-      await syncInspectionRecord({
-        id: assignedId,
-        fabricType: newRecord.fabricType,
-        fabricName: newRecord.title,
-        imagePath: newRecord.imagePath,
-        defectCount: 0,
-        grade: 'A',
-        status: 'Passed',
-        overallSummary: newRecord.overallSummary,
-        recommendedAction: newRecord.recommendedAction,
-        inspectorName: newRecord.inspectorName,
-        inspectorEmail: newRecord.inspectorEmail,
-        defects: [],
-      });
-    } catch (err) {
-      console.warn('Database sync notice:', err);
-    }
   };
 
   // ── Detail Report Actions (PDF, CSV, JSON, Share) ──
@@ -776,7 +855,6 @@ export function Dashboard({ userData = {}, onLogout }) {
     setInspectPhase('idle');
     setAnalysisStep(-1);
     setCapturedImage(null);
-    setScanResult(null);
   };
 
   // Reset inspect state when leaving tab
@@ -790,16 +868,13 @@ export function Dashboard({ userData = {}, onLogout }) {
   const displayEmail = userData?.email || profileUser?.email || 'inspector@weavesofindia.com';
 
   // Accurate numerical metrics connected to real database statistics (updates +1 upon inspection)
-  const totalInspections = dbStats?.totalInspections ?? (inspections.length > 0 ? inspections.length : 1247);
-  const defectsFound     = dbStats?.defectsDetected ?? (inspections.length > 0 ? inspections.reduce((acc, cur) => acc + (cur.defects || 0), 0) : 523);
-  const gradeABatches    = dbStats?.gradeACount ?? dbStats?.gradeA ?? (inspections.length > 0 ? inspections.filter(i => (i.grade || '').includes('A')).length : 723);
-  const lastActive       = dbStats?.lastActive 
-    ? new Date(dbStats.lastActive).toLocaleDateString([], { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })
-    : (inspections.length > 0 ? (inspections[0].time || 'Today') : 'Today, 10:15 AM');
+  const totalInspections = inspections.length;
+  const defectsFound = inspections.reduce((total, inspection) => total + (Number(inspection.defects) || 0), 0);
+  const gradeABatches = inspections.filter((inspection) => (inspection.grade || '').toUpperCase().includes('A')).length;
 
   return (
     <div style={outerWrapperStyle}>
-      {/* ── Mobile Phone Viewport Frame ── */}
+      {/* ── Full-screen mobile dashboard ── */}
       <div style={mobileFrameStyle}>
         
 
@@ -841,7 +916,7 @@ export function Dashboard({ userData = {}, onLogout }) {
               <span>Start New Inspection</span>
             </button>
 
-            {/* ── 2x2 Metrics Grid (Values are null) ── */}
+            {/* ── Inspection Metrics ── */}
             <div style={metricsGridStyle}>
               {/* Total Inspections */}
               <div style={metricCardStyle}>
@@ -879,19 +954,6 @@ export function Dashboard({ userData = {}, onLogout }) {
                 </div>
               </div>
 
-              {/* Last Active */}
-              <div style={metricCardStyle}>
-                <div style={metricLabelStyle}>Last Active</div>
-                <div style={{
-                  ...metricValStyle,
-                  color: '#64748b',
-                  fontSize: inspections.length === 0 ? '16px' : '14.5px',
-                  marginTop: '10px',
-                  lineHeight: 1.25
-                }}>
-                  {lastActive}
-                </div>
-              </div>
             </div>
 
             {/* ── Recent Inspections Section ── */}
@@ -975,7 +1037,9 @@ export function Dashboard({ userData = {}, onLogout }) {
           <div style={{
             ...contentScrollStyle,
             backgroundColor: inspectPhase === 'results_flow' ? '#f8fafc' : '#161922',
-            padding: inspectPhase === 'results_flow' ? 0 : '18px 16px 24px',
+            padding: inspectPhase === 'results_flow'
+              ? 'env(safe-area-inset-top) 0 calc(96px + env(safe-area-inset-bottom))'
+              : 'calc(18px + env(safe-area-inset-top)) 16px calc(96px + env(safe-area-inset-bottom))',
           }}>
 
             {/* ── Hidden file inputs ── */}
@@ -1020,6 +1084,18 @@ export function Dashboard({ userData = {}, onLogout }) {
                   <div style={{ fontSize: '12.5px', color: '#64748b', marginTop: '4px' }}>Open live system camera to scan</div>
                 </div>
 
+                {/* Live YOLO detection card */}
+                <div
+                  onClick={() => startLiveCamera(facingMode, true)}
+                  style={{ ...inspectOptionCardStyle, marginBottom: '14px' }}
+                >
+                  <div style={{ ...inspectOptionIconBoxStyle, backgroundColor: '#ecfdf5' }}>
+                    <Scan size={32} color="#1b7a63" strokeWidth={1.8} />
+                  </div>
+                  <div style={{ fontWeight: '800', fontSize: '16px', color: '#0f172a', marginTop: '14px' }}>Live Defect Detection</div>
+                  <div style={{ fontSize: '12.5px', color: '#64748b', marginTop: '4px' }}>Detect and mark defects as you scan</div>
+                </div>
+
                 {/* Upload Image card */}
                 <div
                   onClick={() => uploadInputRef.current?.click()}
@@ -1054,14 +1130,16 @@ export function Dashboard({ userData = {}, onLogout }) {
                     <ArrowLeft size={20} color="#ffffff" />
                   </button>
                   <div style={{ textAlign: 'center' }}>
-                    <div style={{ color: '#ffffff', fontWeight: '800', fontSize: '15px' }}>Live Camera</div>
+                    <div style={{ color: '#ffffff', fontWeight: '800', fontSize: '15px' }}>
+                      {isLiveDetecting ? 'Live Defect Detection' : 'Live Camera'}
+                    </div>
                     <div style={{ color: '#94a3b8', fontSize: '11px', fontWeight: '500' }}>Align fabric within frame</div>
                   </div>
                   <button
                     onClick={handleToggleFacingMode}
                     style={cameraFlipBtnStyle}
-                    title="Switch Camera"
-                    aria-label="Switch Camera"
+                    title={`Switch to ${facingMode === 'environment' ? 'front' : 'back'} camera`}
+                    aria-label={`Switch to ${facingMode === 'environment' ? 'front' : 'back'} camera`}
                   >
                     <RefreshCw size={18} color="#ffffff" />
                   </button>
@@ -1155,15 +1233,77 @@ export function Dashboard({ userData = {}, onLogout }) {
                     <div style={reticleBottomRightStyle} />
 
                     {/* Real-time scanning beam animation */}
-                    <div style={scannerBeamStyle} />
+                    {!isLiveDetecting && <div style={scannerBeamStyle} />}
 
                     {/* 3x3 Grid Overlay */}
                     <div style={viewfinderGridOverlayStyle} />
 
+                    {/* Live YOLO detections */}
+                    {liveDefects.map((defect) => (
+                      <div
+                        key={defect.id}
+                        style={{
+                          position: 'absolute',
+                          left: `${defect.x}%`,
+                          top: `${defect.y}%`,
+                          width: `${defect.width}%`,
+                          height: `${defect.height}%`,
+                          minWidth: '24px',
+                          minHeight: '24px',
+                          border: '2px solid #f43f5e',
+                          borderRadius: '4px',
+                          backgroundColor: 'rgba(244,63,94,0.12)',
+                          zIndex: 7,
+                          pointerEvents: 'none',
+                        }}
+                      >
+                        <span style={{
+                          position: 'absolute',
+                          left: '-2px',
+                          bottom: '100%',
+                          maxWidth: '180px',
+                          padding: '3px 6px',
+                          borderRadius: '4px 4px 0 0',
+                          backgroundColor: '#e11d48',
+                          color: '#ffffff',
+                          fontSize: '10px',
+                          fontWeight: '700',
+                          whiteSpace: 'nowrap',
+                        }}>
+                          {defect.type}{defect.confidence ? ` ${Math.round(defect.confidence)}%` : ''}
+                        </span>
+                      </div>
+                    ))}
+
                     {/* Live badge */}
-                    <div style={viewfinderBadgeStyle}>
-                      <div style={livePulseDotStyle} />
-                      <span>LIVE SYSTEM FEED</span>
+                    <div style={{ ...viewfinderBadgeStyle, top: 'auto', bottom: '12px' }}>
+                      <div style={{ ...livePulseDotStyle, backgroundColor: isLiveDetecting ? '#22c55e' : '#ef4444' }} />
+                      <span>
+                        {isLiveDetecting
+                          ? liveAiMode === 'mock' ? 'DEMO DETECTION' : 'AI DETECTION'
+                          : 'LIVE CAMERA FEED'}
+                      </span>
+                    </div>
+                  </div>
+                )}
+
+                {cameraStream && (
+                  <div style={liveDetectionPanelStyle}>
+                    <button
+                      type="button"
+                      onClick={handleToggleLiveDetection}
+                      style={liveDetectionToggleStyle}
+                    >
+                      {isLiveDetecting ? 'Pause Live Detection' : 'Start Live Detection'}
+                    </button>
+                    <div style={liveDetectionStatusStyle} aria-live="polite">
+                      {liveDetectionError
+                        ? liveDetectionError
+                        : isLiveDetecting
+                          ? liveAiMode === 'mock'
+                            ? `${liveDefects.length} demo detection${liveDefects.length === 1 ? '' : 's'} — configure AI_MODE=yolo for trained YOLO results`
+                            : `${liveDefects.length} defect${liveDefects.length === 1 ? '' : 's'} detected`
+                          : 'Live AI detection is paused.'}
                     </div>
                   </div>
                 )}
@@ -1197,7 +1337,8 @@ export function Dashboard({ userData = {}, onLogout }) {
                   <button
                     onClick={handleToggleFacingMode}
                     style={cameraSecondaryBtnStyle}
-                    title="Flip camera"
+                    title={`Switch to ${facingMode === 'environment' ? 'front' : 'back'} camera`}
+                    aria-label={`Switch to ${facingMode === 'environment' ? 'front' : 'back'} camera`}
                   >
                     <RefreshCw size={20} color="#ffffff" />
                   </button>
@@ -1696,13 +1837,17 @@ export function Dashboard({ userData = {}, onLogout }) {
             {/* Home Tab */}
             <button
               onClick={() => setActiveTab('home')}
+              aria-label="Home"
+              aria-current={activeTab === 'home' ? 'page' : undefined}
               style={navTabBtnStyle}
             >
-              <Home
-                size={22}
-                color={activeTab === 'home' ? '#1b7a63' : '#94a3b8'}
-                strokeWidth={activeTab === 'home' ? 2.5 : 2}
-              />
+              <span style={navTabIconStyle(activeTab === 'home')}>
+                <Home
+                  size={22}
+                  color={activeTab === 'home' ? '#1b7a63' : '#94a3b8'}
+                  strokeWidth={activeTab === 'home' ? 2.5 : 2}
+                />
+              </span>
               <span style={{
                 ...navTabLabelStyle,
                 color: activeTab === 'home' ? '#1b7a63' : '#94a3b8',
@@ -1715,13 +1860,17 @@ export function Dashboard({ userData = {}, onLogout }) {
             {/* Inspect Tab */}
             <button
               onClick={() => handleTabChange('inspect')}
+              aria-label="Inspect"
+              aria-current={activeTab === 'inspect' ? 'page' : undefined}
               style={navTabBtnStyle}
             >
-              <Scan
-                size={22}
-                color={activeTab === 'inspect' ? '#1b7a63' : '#94a3b8'}
-                strokeWidth={activeTab === 'inspect' ? 2.5 : 2}
-              />
+              <span style={navTabIconStyle(activeTab === 'inspect')}>
+                <Scan
+                  size={22}
+                  color={activeTab === 'inspect' ? '#1b7a63' : '#94a3b8'}
+                  strokeWidth={activeTab === 'inspect' ? 2.5 : 2}
+                />
+              </span>
               <span style={{
                 ...navTabLabelStyle,
                 color: activeTab === 'inspect' ? '#1b7a63' : '#94a3b8',
@@ -1734,9 +1883,11 @@ export function Dashboard({ userData = {}, onLogout }) {
             {/* History Tab */}
             <button
               onClick={() => handleTabChange('history')}
+              aria-label="History"
+              aria-current={activeTab === 'history' ? 'page' : undefined}
               style={navTabBtnStyle}
             >
-              <div style={{ position: 'relative', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+              <span style={{ ...navTabIconStyle(activeTab === 'history'), position: 'relative' }}>
                 <History
                   size={22}
                   color={activeTab === 'history' ? '#1b7a63' : '#94a3b8'}
@@ -1761,7 +1912,7 @@ export function Dashboard({ userData = {}, onLogout }) {
                     {inspections.length}
                   </span>
                 )}
-              </div>
+              </span>
               <span style={{
                 ...navTabLabelStyle,
                 color: activeTab === 'history' ? '#1b7a63' : '#94a3b8',
@@ -1774,13 +1925,17 @@ export function Dashboard({ userData = {}, onLogout }) {
             {/* Profile Tab */}
             <button
               onClick={() => handleTabChange('profile')}
+              aria-label="Profile"
+              aria-current={activeTab === 'profile' ? 'page' : undefined}
               style={navTabBtnStyle}
             >
-              <User
-                size={22}
-                color={activeTab === 'profile' ? '#1b7a63' : '#94a3b8'}
-                strokeWidth={2}
-              />
+              <span style={navTabIconStyle(activeTab === 'profile')}>
+                <User
+                  size={22}
+                  color={activeTab === 'profile' ? '#1b7a63' : '#94a3b8'}
+                  strokeWidth={2}
+                />
+              </span>
               <span style={{
                 ...navTabLabelStyle,
                 color: activeTab === 'profile' ? '#1b7a63' : '#94a3b8',
@@ -2650,11 +2805,12 @@ export function Dashboard({ userData = {}, onLogout }) {
 
 const outerWrapperStyle = {
   width: '100%',
-  minHeight: '100vh',
+  height: '100%',
+  minHeight: 0,
   backgroundColor: '#0c1017',
   display: 'flex',
   justifyContent: 'center',
-  alignItems: 'center',
+  alignItems: 'stretch',
   fontFamily: "'Plus Jakarta Sans', system-ui, -apple-system, sans-serif",
   userSelect: 'none',
   padding: '0',
@@ -2662,14 +2818,11 @@ const outerWrapperStyle = {
 
 const mobileFrameStyle = {
   width: '100%',
-  maxWidth: '390px',
-  height: 'min(844px, 100vh)',
+  height: '100%',
   backgroundColor: '#161922',
   display: 'flex',
   flexDirection: 'column',
   position: 'relative',
-  boxShadow: '0 25px 60px rgba(0, 0, 0, 0.7), 0 0 0 1px rgba(255, 255, 255, 0.08)',
-  borderRadius: '32px',
   overflow: 'hidden',
 };
 
@@ -2700,9 +2853,13 @@ const statusBarIconsStyle = {
 
 const contentScrollStyle = {
   flex: 1,
+  minHeight: 0,
   overflowY: 'auto',
-  padding: '16px 20px 96px 20px',
+  padding: 'calc(16px + env(safe-area-inset-top)) 20px calc(96px + env(safe-area-inset-bottom))',
   boxSizing: 'border-box',
+  WebkitOverflowScrolling: 'touch',
+  overscrollBehaviorY: 'contain',
+  touchAction: 'pan-y',
 };
 
 const headerRowStyle = {
@@ -2900,11 +3057,8 @@ const bottomNavContainerStyle = {
   bottom: 0,
   left: 0,
   right: 0,
-  backgroundColor: '#ffffff',
-  borderTop: '1px solid #f1f5f9',
-  borderBottomLeftRadius: '32px',
-  borderBottomRightRadius: '32px',
-  padding: '10px 16px 8px 16px',
+  backgroundColor: 'transparent',
+  padding: '10px 16px calc(8px + env(safe-area-inset-bottom)) 16px',
   boxSizing: 'border-box',
   zIndex: 20,
 };
@@ -2916,16 +3070,30 @@ const navTabsRowStyle = {
 };
 
 const navTabBtnStyle = {
-  background: 'none',
+  backgroundColor: 'transparent',
   border: 'none',
   display: 'flex',
   flexDirection: 'column',
   alignItems: 'center',
-  gap: '4px',
+  gap: '2px',
   cursor: 'pointer',
-  padding: '4px 10px',
-  borderRadius: '8px',
+  padding: '0 6px',
+  minWidth: '64px',
+  color: 'inherit',
+  touchAction: 'manipulation',
 };
+
+const navTabIconStyle = (active) => ({
+  width: '46px',
+  height: '46px',
+  display: 'flex',
+  alignItems: 'center',
+  justifyContent: 'center',
+  borderRadius: '50%',
+  border: `1px solid ${active ? 'rgba(27,122,99,0.5)' : 'rgba(148,163,184,0.32)'}`,
+  backgroundColor: 'transparent',
+  boxSizing: 'border-box',
+});
 
 const navTabLabelStyle = {
   fontSize: '11px',
@@ -3021,9 +3189,8 @@ const inspectTipStyle = {
 const cameraContainerStyle = {
   display: 'flex',
   flexDirection: 'column',
-  height: '100%',
-  minHeight: '480px',
-  justifyContent: 'space-between',
+  minHeight: '100%',
+  gap: '14px',
 };
 
 const cameraHeaderStyle = {
@@ -3187,8 +3354,37 @@ const cameraBottomControlsStyle = {
   display: 'flex',
   alignItems: 'center',
   justifyContent: 'space-around',
-  paddingTop: '20px',
+  paddingTop: '4px',
   paddingBottom: '8px',
+};
+
+const liveDetectionPanelStyle = {
+  display: 'flex',
+  flexDirection: 'column',
+  alignItems: 'center',
+  gap: '8px',
+  padding: '0 4px',
+};
+
+const liveDetectionToggleStyle = {
+  width: '100%',
+  minHeight: '44px',
+  border: '1px solid rgba(94,234,212,0.35)',
+  borderRadius: '12px',
+  backgroundColor: 'rgba(27,122,99,0.2)',
+  color: '#d1fae5',
+  fontSize: '13px',
+  fontWeight: '700',
+  cursor: 'pointer',
+  touchAction: 'manipulation',
+};
+
+const liveDetectionStatusStyle = {
+  minHeight: '18px',
+  color: '#94a3b8',
+  fontSize: '11px',
+  lineHeight: 1.5,
+  textAlign: 'center',
 };
 
 const shutterBtnOuterStyle = {
@@ -3298,12 +3494,16 @@ if (typeof document !== 'undefined') {
 
 // ── Profile Page Styles ──────────────────────────────────────────────────────────────────
 const profilePageStyle = {
+  flex: 1,
   display: 'flex',
   flexDirection: 'column',
-  minHeight: '100%',
+  minHeight: 0,
   backgroundColor: '#f3f5f8',
-  padding: '0 0 24px 0',
+  padding: '0 0 calc(96px + env(safe-area-inset-bottom))',
   overflowY: 'auto',
+  WebkitOverflowScrolling: 'touch',
+  overscrollBehaviorY: 'contain',
+  touchAction: 'pan-y',
 };
 
 // Dark navy rounded header card
@@ -3311,7 +3511,7 @@ const profileHeaderCardStyle = {
   background: 'linear-gradient(160deg, #18243e 0%, #121a2c 100%)',
   borderBottomLeftRadius: '32px',
   borderBottomRightRadius: '32px',
-  padding: '40px 24px 32px',
+  padding: 'calc(40px + env(safe-area-inset-top)) 24px 32px',
   display: 'flex',
   flexDirection: 'column',
   alignItems: 'center',
@@ -3547,4 +3747,3 @@ const profileToggleRowStyle = {
 };
 
 export default Dashboard;
-

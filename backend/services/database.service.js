@@ -301,6 +301,7 @@ export class DatabaseService {
     grade = '',
     status = '',
     userId = '',
+    inspectorEmail = '',
     dateFrom = '',
     dateTo = '',
     page = 1,
@@ -327,6 +328,9 @@ export class DatabaseService {
         if (userId && userId !== 'all') {
           query = query.eq('user_id', userId);
         }
+        if (inspectorEmail.trim()) {
+          query = query.eq('inspector_email', inspectorEmail.trim().toLowerCase());
+        }
         if (dateFrom) {
           query = query.gte('inspection_date', dateFrom);
         }
@@ -339,6 +343,22 @@ export class DatabaseService {
           .range(offset, offset + limitNum - 1);
 
         if (!error && data) {
+          const inspectionIds = data.map((row) => row.inspection_id).filter(Boolean);
+          let defectsByInspection = {};
+          if (inspectionIds.length > 0) {
+            const { data: defectRows, error: defectError } = await supabase
+              .from('defects')
+              .select('*')
+              .in('inspection_id', inspectionIds);
+            if (defectError) {
+              console.warn('[DatabaseService] Supabase inspection defects fetch failed:', defectError.message);
+            } else {
+              defectsByInspection = (defectRows || []).reduce((grouped, defect) => {
+                (grouped[defect.inspection_id] ||= []).push(defect);
+                return grouped;
+              }, {});
+            }
+          }
           return {
             inspections: data.map(r => ({
               id: r.id,
@@ -350,10 +370,12 @@ export class DatabaseService {
               status: r.status,
               inspection_date: r.inspection_date,
               inspector_name: r.inspector_name || 'Rajesh Kumar',
+              inspector_email: r.inspector_email || '',
               image_path: r.image_url || r.image_path,
               overall_summary: r.overall_summary,
               recommended_action: r.recommended_action,
               model_version: r.model_version,
+              defects: defectsByInspection[r.inspection_id] || [],
             })),
             pagination: {
               total: count || 0,
@@ -389,6 +411,10 @@ export class DatabaseService {
     if (userId && userId !== 'all') {
       conditions.push('i.user_id = ?');
       params.push(parseInt(userId, 10));
+    }
+    if (inspectorEmail.trim()) {
+      conditions.push('LOWER(u.email) = ?');
+      params.push(inspectorEmail.trim().toLowerCase());
     }
     if (dateFrom) {
       conditions.push('i.inspection_date >= ?');
@@ -429,14 +455,7 @@ export class DatabaseService {
       FROM inspections i
       LEFT JOIN users u ON i.user_id = u.id
       WHERE ${where}
-      ORDER BY 
-        CASE 
-          WHEN i.inspection_date >= '2026-10-01' THEN 0 
-          WHEN i.inspection_id LIKE 'INS-2024-00%' OR i.inspection_id LIKE 'INS-04%' THEN 1 
-          ELSE 2 
-        END ASC,
-        i.inspection_date DESC, 
-        i.id DESC
+      ORDER BY i.inspection_date DESC, i.id DESC
       LIMIT ? OFFSET ?
     `;
     const rows = sqliteDb.prepare(selectSql).all(...params, limitNum, offset);
@@ -661,9 +680,18 @@ export class DatabaseService {
 
     // 2. Always maintain local SQLite sync as dual-resilience backup
     const existing = sqliteDb.prepare('SELECT id FROM inspections WHERE inspection_id = ?').get(inspectionId);
-    let userId = 1;
+    let userId = null;
     if (inspectorEmail) {
-      const u = sqliteDb.prepare('SELECT id FROM users WHERE LOWER(email) = ?').get(inspectorEmail.toLowerCase());
+      const normalizedEmail = inspectorEmail.trim().toLowerCase();
+      let u = sqliteDb.prepare('SELECT id FROM users WHERE LOWER(email) = ?').get(normalizedEmail);
+      if (!u) {
+        const now = new Date().toISOString();
+        const insertUser = sqliteDb.prepare(`
+          INSERT INTO users (name, email, role, status, created_at, last_active)
+          VALUES (?, ?, 'inspector', 'active', ?, ?)
+        `).run(inspectorName || normalizedEmail.split('@')[0], normalizedEmail, now, now);
+        u = { id: insertUser.lastInsertRowid };
+      }
       if (u) userId = u.id;
     }
 

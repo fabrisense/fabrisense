@@ -6,7 +6,7 @@ import YoloService from '../services/ai/yolo.service.js';
 import DatabaseService from '../services/database.service.js';
 import { uploadInspectionImage } from '../middleware/upload.middleware.js';
 import { isSupabaseConfigured, uploadToSupabaseStorage } from '../services/supabase.service.js';
-import { UPLOADS_DIR } from '../config/env.js';
+import { AI_MODE, UPLOADS_DIR } from '../config/env.js';
 
 const router = Router();
 
@@ -16,6 +16,13 @@ const router = Router();
  * Runs YOLOv8 adapter and uploads to Supabase Storage if configured.
  */
 router.post('/analyze', uploadInspectionImage.single('image'), async (req, res) => {
+  if (!req.file) {
+    return res.status(400).json({
+      success: false,
+      error: 'An image file is required for fabric analysis.',
+    });
+  }
+
   try {
     const { fabricType = 'Handloom Cotton Blend', fabricName = 'Fabric Sample' } = req.body;
     let imagePath = '/assets/indigo_denim.jpg';
@@ -50,8 +57,7 @@ router.post('/analyze', uploadInspectionImage.single('image'), async (req, res) 
       }
     }
 
-    const fullLocalPath = req.file ? req.file.path : imagePath;
-    const aiResult = await YoloService.analyzeFabric(fullLocalPath, { fabricType, fabricName });
+    const aiResult = await YoloService.analyzeFabric(req.file.path, { fabricType, fabricName });
 
     return res.json({
       success: true,
@@ -64,6 +70,43 @@ router.post('/analyze', uploadInspectionImage.single('image'), async (req, res) 
   } catch (error) {
     console.error('[Common Analyze Error]', error);
     return res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+/**
+ * POST /api/inspections/live-detect
+ * Analyze a temporary live-camera frame without storing an inspection image.
+ */
+router.post('/live-detect', uploadInspectionImage.single('image'), async (req, res) => {
+  if (!req.file) {
+    return res.status(400).json({ success: false, error: 'A camera image frame is required.' });
+  }
+
+  try {
+    const { fabricType = 'Handloom Cotton Blend' } = req.body;
+    const result = await YoloService.analyzeFabric(req.file.path, {
+      fabricType,
+      liveDetection: true,
+    });
+    return res.json({
+      success: true,
+      data: {
+        ...result,
+        aiMode: result.aiMode || ((AI_MODE || '').toLowerCase() === 'yolo' ? 'yolo' : 'mock'),
+      },
+    });
+  } catch (error) {
+    console.error('[Live Detection Error]', error);
+    return res.status(503).json({
+      success: false,
+      error: `Live detection is unavailable: ${error.message}`,
+    });
+  } finally {
+    try {
+      await fs.promises.unlink(req.file.path);
+    } catch (cleanupError) {
+      console.error('[Live Detection Cleanup Error]', cleanupError);
+    }
   }
 });
 
@@ -211,7 +254,7 @@ router.get('/stats', async (req, res) => {
  */
 router.get('/', async (req, res) => {
   try {
-    const { limit, page, search, grade, status, userId, dateFrom, dateTo } = req.query;
+    const { limit, page, search, grade, status, userId, inspectorEmail, dateFrom, dateTo } = req.query;
     const result = await DatabaseService.getInspections({
       limit: limit ? parseInt(limit, 10) : 50,
       page: page ? parseInt(page, 10) : 1,
@@ -219,6 +262,7 @@ router.get('/', async (req, res) => {
       grade: grade || '',
       status: status || '',
       userId: userId || '',
+      inspectorEmail: inspectorEmail || '',
       dateFrom: dateFrom || '',
       dateTo: dateTo || '',
     });

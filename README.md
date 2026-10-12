@@ -201,7 +201,10 @@ To connect the platform to a running YOLOv8 model inference server (e.g., Python
      ]
    }
    ```
-3. **Resilient Fail-Safe**: If the live YOLO server becomes unreachable or times out, the adapter logs a warning and gracefully falls back to mock detection so factory inspection operations are never blocked.
+3. **Inference errors**: When `AI_MODE=yolo`, failed or unreachable YOLO inference is returned as an error; it is never silently replaced with mock detections. Mock predictions are used only when `AI_MODE=mock`.
+
+### Live camera defect detection
+The mobile Inspect screen includes a **Live Defect Detection** option. It samples camera frames and sends them to `POST /api/inspections/live-detect`; detections are overlaid on the preview and temporary frame uploads are removed after inference. For trained-model detections, run the YOLO inference service and set `AI_MODE=yolo` and `YOLO_API_URL` as described above. In demo mode the preview explicitly labels detections as simulated. If the live YOLO service is unavailable, live detection reports the error rather than displaying simulated boxes as real results.
 
 ---
 

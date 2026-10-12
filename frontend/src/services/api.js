@@ -222,6 +222,7 @@ export function fetchInspectionsList(params = {}) {
   const query = new URLSearchParams();
   if (params.limit) query.set('limit', params.limit);
   if (params.page) query.set('page', params.page);
+  if (params.inspectorEmail) query.set('inspectorEmail', params.inspectorEmail.trim().toLowerCase());
   if (params.grade) query.set('grade', params.grade);
   if (params.status) query.set('status', params.status);
   if (params.search) query.set('search', params.search);
@@ -259,10 +260,17 @@ export async function analyzeFabricImage(imageInput, metadata = {}) {
       }
       const blob = new Blob([array], { type: mime });
       formData.append('image', blob, 'capture.jpg');
+    } else if (typeof imageInput === 'string' && imageInput.startsWith('blob:')) {
+      const imageResponse = await fetch(imageInput);
+      if (!imageResponse.ok) {
+        throw new Error(`Could not read the selected image (HTTP ${imageResponse.status}).`);
+      }
+      const blob = await imageResponse.blob();
+      formData.append('image', blob, 'fabric-image.jpg');
     } else if (imageInput instanceof Blob || (typeof File !== 'undefined' && imageInput instanceof File)) {
       formData.append('image', imageInput, imageInput.name || 'fabric.jpg');
-    } else if (typeof imageInput === 'string' && imageInput) {
-      formData.append('imagePath', imageInput);
+    } else {
+      throw new TypeError('Fabric analysis requires an image file, data URL, or browser blob URL.');
     }
 
     if (metadata.fabricType) formData.append('fabricType', metadata.fabricType);
@@ -286,4 +294,28 @@ export async function analyzeFabricImage(imageInput, metadata = {}) {
   }
 }
 
+/**
+ * Send a temporary camera frame to the AI detector without creating an
+ * inspection record. The backend removes the uploaded frame after inference.
+ * @param {Blob} frame
+ * @param {object} [metadata]
+ * @returns {Promise<{ success: boolean, data: object }>}
+ */
+export async function analyzeLiveFabricFrame(frame, metadata = {}) {
+  if (!(frame instanceof Blob)) {
+    throw new TypeError('Live fabric detection requires an image frame.');
+  }
 
+  const formData = new FormData();
+  formData.append('image', frame, 'live-frame.jpg');
+  if (metadata.fabricType) formData.append('fabricType', metadata.fabricType);
+
+  const url = `${API_BASE}/api/inspections/live-detect`;
+  const response = await fetch(url, { method: 'POST', body: formData });
+  if (!response.ok) {
+    const errorData = await response.json().catch(() => ({}));
+    throw new Error(errorData.error || `Live detection failed (HTTP ${response.status})`);
+  }
+
+  return response.json();
+}

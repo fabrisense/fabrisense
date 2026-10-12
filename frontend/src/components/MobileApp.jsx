@@ -252,49 +252,13 @@ export function MobileApp() {
 
   return (
     <div
+      className="app-shell"
       style={{
-        minHeight: '100vh',
         backgroundColor: '#0a0a0a',
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'center',
         fontFamily: "'Plus Jakarta Sans', system-ui, sans-serif",
-        position: 'relative',
       }}
     >
-
-      {/* Desktop subtle grid pattern */}
-      <div
-        style={{
-          position: 'fixed',
-          inset: 0,
-          backgroundImage:
-            'radial-gradient(circle at 1px 1px, rgba(255,255,255,0.04) 1px, transparent 0)',
-          backgroundSize: '28px 28px',
-          pointerEvents: 'none',
-          zIndex: 0,
-        }}
-      />
-
-      {/* ── Mobile Phone Frame (390×844) ── */}
-      <div
-        style={{
-          position: 'relative',
-          zIndex: 1,
-          width: '390px',
-          height: '844px',
-          borderRadius: '0px',
-          overflow: 'hidden',
-          boxShadow:
-            '0 0 0 1px rgba(255,255,255,0.08), 0 40px 80px rgba(0,0,0,0.7), 0 0 120px rgba(0,0,0,0.4)',
-          flexShrink: 0,
-          maxWidth: '100vw',
-          maxHeight: '100dvh',
-          backgroundColor: '#000000',
-        }}
-      >
-        {renderContent()}
-      </div>
+      {renderContent()}
     </div>
   );
 }

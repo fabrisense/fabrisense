@@ -721,6 +721,9 @@ export function LoginPage({ onLoginSuccess, onBack, theme = 'green' }) {
       fontFamily: "'Plus Jakarta Sans', system-ui, -apple-system, sans-serif",
       display: 'flex', flexDirection: 'column',
       overflowY: 'auto',
+      WebkitOverflowScrolling: 'touch',
+      overscrollBehaviorY: 'contain',
+      touchAction: 'pan-y',
     }}>
 
       {/* Ambient glow */}
@@ -728,7 +731,7 @@ export function LoginPage({ onLoginSuccess, onBack, theme = 'green' }) {
 
       {/* ── Hero Header ── */}
       <div style={{
-        padding: '20px 20px 0',
+        padding: 'calc(20px + env(safe-area-inset-top)) 20px 0',
         display: 'flex', flexDirection: 'column', alignItems: 'center',
         gap: '14px', zIndex: 1, flexShrink: 0,
       }}>

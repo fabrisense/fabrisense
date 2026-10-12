@@ -69,7 +69,7 @@ export function RoleSelect({ onSelectUser, onSelectAdmin }) {
 
       {/* ════════ TOP SECTION: Header branding ════════ */}
       <div style={{
-        padding: "40px 28px 20px",
+        padding: "calc(40px + env(safe-area-inset-top)) 28px 20px",
         display: "flex", flexDirection: "column", alignItems: "center",
         gap: "10px", zIndex: 1, flexShrink: 0,
         opacity: visible ? 1 : 0,
@@ -103,6 +103,8 @@ export function RoleSelect({ onSelectUser, onSelectAdmin }) {
         flex: 1, display: "flex", flexDirection: "column",
         justifyContent: "center", gap: "14px",
         padding: "0 22px 32px", zIndex: 1,
+        minHeight: 0, overflowY: "auto",
+        WebkitOverflowScrolling: "touch", overscrollBehaviorY: "contain", touchAction: "pan-y",
       }}>
 
         <div style={{

@@ -87,10 +87,7 @@ export class YoloService {
       try {
         return await this._callRealYoloEndpoint(imagePath, metadata);
       } catch (err) {
-        console.error('[YOLO Service] Real YOLO inference failed, falling back to mock engine:', err.message);
-        const result = this._generateMockPrediction(imagePath, metadata);
-        result.summary = `[Fallback from offline YOLO server] ${result.summary}`;
-        return result;
+        throw new Error(`YOLO inference failed: ${err.message}`);
       }
     }
 

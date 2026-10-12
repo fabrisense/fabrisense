@@ -337,7 +337,7 @@ export function AdminDashboard({ userData = {}, onLogout, onUpdateUserData }) {
 
       {/* TOP BAR */}
       <div style={{
-        padding: "12px 16px", backgroundColor: th.surface,
+        padding: "calc(12px + env(safe-area-inset-top)) 16px 12px", backgroundColor: th.surface,
         borderBottom: `1px solid ${th.border}`,
         display: "flex", alignItems: "center", justifyContent: "space-between",
         flexShrink: 0, boxShadow: "0 1px 4px rgba(0,0,0,0.06)",
@@ -402,7 +402,7 @@ export function AdminDashboard({ userData = {}, onLogout, onUpdateUserData }) {
       </div>
 
       {/* CONTENT */}
-      <div style={{ flex: 1, overflowY: "auto", padding: "16px", display: "flex", flexDirection: "column", gap: "14px" }}>
+      <div style={{ flex: 1, minHeight: 0, overflowY: "auto", padding: "16px 16px calc(16px + env(safe-area-inset-bottom))", display: "flex", flexDirection: "column", gap: "14px", WebkitOverflowScrolling: "touch", overscrollBehaviorY: "contain", touchAction: "pan-y" }}>
 
         {/* ── DASHBOARD ── */}
         {nav === "dashboard" && (<>
