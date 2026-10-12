@@ -17,8 +17,31 @@
  */
 
 const rawApiBase = (import.meta.env.VITE_API_BASE_URL || '').replace(/\/$/, '');
-const isBrowser = typeof window !== 'undefined' && window.location.hostname !== '10.0.2.2';
-const API_BASE = isBrowser && rawApiBase.includes('10.0.2.2') ? '' : rawApiBase;
+
+/**
+ * Detect if we are running inside a Capacitor native app (Android/iOS).
+ * Capacitor sets window.Capacitor.isNativePlatform() = true.
+ */
+function isCapacitorNative() {
+  try {
+    return !!(window?.Capacitor?.isNativePlatform?.());
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * In browser dev mode, leave API_BASE empty so Vite proxy handles /api → :5000.
+ * In Capacitor (Android/iOS), use the explicit VITE_API_BASE_URL (e.g. http://10.0.2.2:5000).
+ * In production browser builds, use the explicit URL if set.
+ */
+const API_BASE = (() => {
+  if (!rawApiBase) return ''; // empty → Vite proxy (browser dev)
+  if (isCapacitorNative()) return rawApiBase; // native app: always use explicit URL
+  // Browser with an explicit URL set: only use it if it doesn't point to Android loopback
+  if (rawApiBase.includes('10.0.2.2')) return ''; // strip Android-only URL in browser
+  return rawApiBase;
+})();
 
 /**
  * Low-level fetch wrapper.
@@ -192,9 +215,26 @@ export function syncInspectionRecord(inspectionData) {
 
 /**
  * Fetch latest inspections list from shared database.
- * @returns {Promise<{ success: boolean, data: Array }>}
+ * @param {object} [params] - Optional filters: limit, page, grade, status, search
+ * @returns {Promise<{ success: boolean, data: Array, pagination: object }>}
  */
-export function fetchInspectionsList() {
-  return apiFetch('/inspections');
+export function fetchInspectionsList(params = {}) {
+  const query = new URLSearchParams();
+  if (params.limit) query.set('limit', params.limit);
+  if (params.page) query.set('page', params.page);
+  if (params.grade) query.set('grade', params.grade);
+  if (params.status) query.set('status', params.status);
+  if (params.search) query.set('search', params.search);
+  const qStr = query.toString();
+  return apiFetch(`/inspections${qStr ? `?${qStr}` : ''}`);
 }
+
+/**
+ * Fetch live aggregate inspection metrics & KPI statistics.
+ * @returns {Promise<{ success: boolean, data: object }>}
+ */
+export function fetchInspectionStats() {
+  return apiFetch('/inspections/stats');
+}
+
 

@@ -288,28 +288,36 @@ CREATE POLICY "Logs readable by authenticated users"
 -- 11. AUTOMATIC PROFILE CREATION TRIGGER ON AUTH SIGNUP
 -- ─────────────────────────────────────────────────────────────────────────────
 CREATE OR REPLACE FUNCTION public.handle_new_user()
-RETURNS trigger AS $$
+RETURNS trigger
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public, pg_temp
+AS $$
 BEGIN
   INSERT INTO public.profiles (id, email, name, role, status, avatar_url)
   VALUES (
     new.id,
     new.email,
-    COALESCE(new.raw_user_meta_data->>'name', split_part(new.email, '@', 1)),
+    COALESCE(
+      NULLIF(trim(new.raw_user_meta_data->>'full_name'), ''),
+      NULLIF(trim(new.raw_user_meta_data->>'name'), ''),
+      split_part(new.email, '@', 1)
+    ),
     CASE
-      WHEN lower(trim(coalesce(new.raw_user_meta_data->>'role', ''))) = 'admin' THEN 'admin'::user_role
-      WHEN lower(trim(coalesce(new.raw_user_meta_data->>'role', ''))) = 'manager' THEN 'manager'::user_role
-      ELSE 'inspector'::user_role
+      WHEN lower(trim(coalesce(new.raw_user_meta_data->>'role', ''))) = 'admin' THEN 'admin'::public.user_role
+      WHEN lower(trim(coalesce(new.raw_user_meta_data->>'role', ''))) = 'manager' THEN 'manager'::public.user_role
+      ELSE 'inspector'::public.user_role
     END,
     'active',
     new.raw_user_meta_data->>'avatar_url'
   )
   ON CONFLICT (id) DO UPDATE SET
     email = EXCLUDED.email,
-    name = COALESCE(EXCLUDED.name, profiles.name),
+    name = COALESCE(EXCLUDED.name, public.profiles.name),
     updated_at = now();
   RETURN NEW;
 END;
-$$ LANGUAGE plpgsql SECURITY DEFINER;
+$$;
 
 DROP TRIGGER IF EXISTS on_auth_user_created ON auth.users;
 CREATE TRIGGER on_auth_user_created

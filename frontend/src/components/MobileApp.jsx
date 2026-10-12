@@ -32,30 +32,45 @@ export function MobileApp() {
 
   useEffect(() => {
     const supabase = getSupabase();
-    if (!supabase) return undefined;
-
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
-      if (event === 'PASSWORD_RECOVERY') {
-        passwordRecoveryRef.current = true;
-        setUserSession(null);
-        setScreen('main');
-        setViewState('userLogin');
-        setAnimating(null);
-        return;
+    if (!supabase) {
+      // Supabase not configured — app still works via backend OTP auth
+      try {
+        localStorage.removeItem('fabrisense_session');
+        localStorage.removeItem('fabrisense_users');
+      } catch (error) {
+        console.error('Failed to clear legacy local authentication data:', error);
       }
+      return undefined;
+    }
 
-      if (event === 'SIGNED_OUT') {
-        passwordRecoveryRef.current = false;
-        setUserSession(null);
-        return;
-      }
+    let subscription;
+    try {
+      const { data } = supabase.auth.onAuthStateChange((event, session) => {
+        if (event === 'PASSWORD_RECOVERY') {
+          passwordRecoveryRef.current = true;
+          setUserSession(null);
+          setScreen('main');
+          setViewState('userLogin');
+          setAnimating(null);
+          return;
+        }
 
-      if (passwordRecoveryRef.current) return;
+        if (event === 'SIGNED_OUT') {
+          passwordRecoveryRef.current = false;
+          setUserSession(null);
+          return;
+        }
 
-      const profile = session?.user ? getProfileFromUser(session.user) : null;
-      setUserSession(profile);
-      if (event === 'INITIAL_SESSION' && profile) setScreen('dashboard');
-    });
+        if (passwordRecoveryRef.current) return;
+
+        const profile = session?.user ? getProfileFromUser(session.user) : null;
+        setUserSession(profile);
+        if (event === 'INITIAL_SESSION' && profile) setScreen('dashboard');
+      });
+      subscription = data?.subscription;
+    } catch (err) {
+      console.error('[FabriSense] Supabase auth listener error:', err.message);
+    }
 
     try {
       localStorage.removeItem('fabrisense_session');
@@ -64,7 +79,9 @@ export function MobileApp() {
       console.error('Failed to clear legacy local authentication data:', error);
     }
 
-    return () => subscription.unsubscribe();
+    return () => {
+      try { subscription?.unsubscribe(); } catch (_) {}
+    };
   }, []);
 
   /* ── User Navigation ── */

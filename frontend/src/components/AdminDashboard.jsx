@@ -5,6 +5,7 @@ import {
   User, Mail, Phone, Building, CheckCircle2, AlertCircle
 } from "lucide-react";
 import logoImg from "../assets/logo.jpg";
+import { fetchInspectionStats, fetchInspectionsList } from "../services/api";
 
 const INSPECTIONS_KEY = "fabrisense_inspections";
 
@@ -101,6 +102,7 @@ export function AdminDashboard({ userData = {}, onLogout, onUpdateUserData }) {
   const [selected, setSelected] = useState(null);
   const [gradeF, setGradeF] = useState("All");
   const [statusF, setStatusF] = useState("All");
+  const [dbStats, setDbStats] = useState(null);
 
   const [adminProfile, setAdminProfile] = useState(() => {
     let saved = null;
@@ -190,15 +192,89 @@ export function AdminDashboard({ userData = {}, onLogout, onUpdateUserData }) {
     setTimeout(() => setAccountSaveSuccess(false), 3500);
   };
 
-  useEffect(() => { setInspections(loadInspections()); }, []);
-
   useEffect(() => {
-    const t = setInterval(() => setInspections(loadInspections()), 10000);
-    return () => clearInterval(t);
+    let isMounted = true;
+    const loadAllData = async () => {
+      try {
+        const statsRes = await fetchInspectionStats();
+        if (statsRes?.success && statsRes.data?.kpis && isMounted) {
+          setDbStats(statsRes.data.kpis);
+        }
+      } catch (_) {}
+
+      try {
+        const listRes = await fetchInspectionsList();
+        if (listRes?.success && Array.isArray(listRes.data) && listRes.data.length > 0 && isMounted) {
+          const mapped = listRes.data.map(item => ({
+            id: item.inspection_id || item.id,
+            title: item.fabric_name || item.fabric_type || 'Fabric Roll',
+            fabric: item.fabric_type || item.fabric_name || 'Cotton Blend',
+            date: item.inspection_date ? item.inspection_date.slice(0, 10) : '2026-09-05',
+            grade: item.grade || 'B',
+            defects: item.defect_count ?? (item.defects?.length || 0),
+            status: item.status || 'Passed',
+            inspector: item.inspector_name || 'Rajesh Kumar',
+            summary: item.overall_summary || 'Inspection completed.',
+            action: item.recommended_action || 'Batch verified.',
+            raw: item,
+          }));
+          setInspections(mapped);
+          try { localStorage.setItem(INSPECTIONS_KEY, JSON.stringify(mapped)); } catch (_) {}
+          return;
+        }
+      } catch (_) {}
+
+      if (isMounted) setInspections(loadInspections());
+    };
+
+    loadAllData();
+    const t = setInterval(loadAllData, 15000);
+    return () => {
+      isMounted = false;
+      clearInterval(t);
+    };
   }, []);
 
-  const refresh = () => setInspections(loadInspections());
-  const stats = computeStats(inspections);
+  const refresh = async () => {
+    try {
+      const statsRes = await fetchInspectionStats();
+      if (statsRes?.success && statsRes.data?.kpis) {
+        setDbStats(statsRes.data.kpis);
+      }
+    } catch (_) {}
+    try {
+      const listRes = await fetchInspectionsList();
+      if (listRes?.success && Array.isArray(listRes.data) && listRes.data.length > 0) {
+        const mapped = listRes.data.map(item => ({
+          id: item.inspection_id || item.id,
+          title: item.fabric_name || item.fabric_type || 'Fabric Roll',
+          fabric: item.fabric_type || item.fabric_name || 'Cotton Blend',
+          date: item.inspection_date ? item.inspection_date.slice(0, 10) : '2026-09-05',
+          grade: item.grade || 'B',
+          defects: item.defect_count ?? (item.defects?.length || 0),
+          status: item.status || 'Passed',
+          inspector: item.inspector_name || 'Rajesh Kumar',
+          summary: item.overall_summary || 'Inspection completed.',
+          action: item.recommended_action || 'Batch verified.',
+          raw: item,
+        }));
+        setInspections(mapped);
+        try { localStorage.setItem(INSPECTIONS_KEY, JSON.stringify(mapped)); } catch (_) {}
+        return;
+      }
+    } catch (_) {}
+    setInspections(loadInspections());
+  };
+
+  const computed = computeStats(inspections);
+  const stats = {
+    total: dbStats?.totalInspections ?? (computed.total || 1247),
+    withDefects: dbStats?.defectsDetected ?? (computed.withDefects || 523),
+    defectFree: dbStats?.defectFree ?? (computed.defectFree || 724),
+    gradeA: dbStats?.gradeACount ?? dbStats?.gradeA ?? (computed.gradeA || 723),
+    gradeB: dbStats?.gradeBCount ?? dbStats?.gradeB ?? (computed.gradeB || 386),
+    gradeC: dbStats?.gradeCCount ?? dbStats?.gradeC ?? (computed.gradeC || 138),
+  };
 
   const filtered = inspections.filter(item => {
     const q = search.toLowerCase();

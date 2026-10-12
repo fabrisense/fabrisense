@@ -7,14 +7,17 @@ import logoImg from '../assets/logo.jpg';
 import {
   getProfileFromUser,
   resendSignupOtp,
-  sendPasswordRecoveryOtp,
   signInWithPassword,
   signOut,
   signUpWithPassword,
-  updatePassword,
   verifySignupOtp,
-  verifyPasswordRecoveryOtp,
 } from '../services/supabase.js';
+import {
+  sendForgotPasswordOtp,
+  resendForgotPasswordOtp,
+  verifyForgotPasswordOtp,
+  resetPassword as backendResetPassword,
+} from '../services/api.js';
 
 // ─── Validation & User Store ────────────────────────────────────────────────
 const REG_USERS_KEY = 'fabrisense_registered_users';
@@ -100,20 +103,8 @@ function OtpBoxes({ value, onChange, disabled }) {
     }
   };
 
-  const handlePaste = (e) => {
-    e.preventDefault();
-    const paste = (e.clipboardData || window.clipboardData)?.getData('text');
-    if (!paste) return;
-    const clean = paste.replace(/\D/g, '').slice(0, 6);
-    if (clean) {
-      onChange(clean);
-      const targetIndex = Math.min(clean.length, 5);
-      inputRefs.current[targetIndex]?.focus();
-    }
-  };
-
   return (
-    <div style={{ display: 'flex', gap: '8px', justifyContent: 'center' }} onPaste={handlePaste}>
+    <div style={{ display: 'flex', gap: '8px', justifyContent: 'center' }}>
       {digits.map((d, i) => (
         <input
           key={i}
@@ -144,7 +135,7 @@ function OtpBoxes({ value, onChange, disabled }) {
 }
 
 // ─── Resend countdown button ─────────────────────────────────────────────────
-function ResendButton({ onResend, cooldown, setCooldown, loading }) {
+function ResendButton({ onResend, cooldown, setCooldown }) {
   useEffect(() => {
     if (cooldown <= 0) return;
     const t = setInterval(() => setCooldown(c => Math.max(0, c - 1)), 1000);
@@ -160,18 +151,14 @@ function ResendButton({ onResend, cooldown, setCooldown, loading }) {
         : <button
             type="button"
             onClick={onResend}
-            disabled={loading}
             style={{
               display: 'inline-flex', alignItems: 'center', gap: '5px',
-              background: 'none', border: 'none', cursor: loading ? 'not-allowed' : 'pointer',
-              color: loading ? 'var(--text-muted)' : 'var(--accent-green)',
-              fontSize: '0.85rem', fontWeight: '700',
+              background: 'none', border: 'none', cursor: 'pointer',
+              color: 'var(--accent-green)', fontSize: '0.85rem', fontWeight: '700',
               fontFamily: "'Plus Jakarta Sans', system-ui, sans-serif",
-              opacity: loading ? 0.6 : 1,
             }}
           >
-            <RefreshCw size={14} style={{ animation: loading ? 'spin 1s linear infinite' : 'none' }} />
-            {loading ? 'Resending code…' : 'Resend Code'}
+            <RefreshCw size={14} /> Resend Code
           </button>
       }
     </div>
@@ -251,7 +238,6 @@ export function LoginPage({ onLoginSuccess, onBack, theme = 'green' }) {
   const [regOtp, setRegOtp]           = useState('');
   const [regOtpCooldown, setRegOtpCooldown] = useState(0);
   const [regOtpLoading, setRegOtpLoading]   = useState(false);
-  const [regResendLoading, setRegResendLoading] = useState(false);
   // Store pending new user until OTP is verified
   const [pendingRegUser, setPendingRegUser] = useState(null);
 
@@ -267,8 +253,8 @@ export function LoginPage({ onLoginSuccess, onBack, theme = 'green' }) {
   const [forgotOtp, setForgotOtp]         = useState('');
   const [forgotOtpCooldown, setForgotOtpCooldown] = useState(0);
   const [forgotOtpLoading, setForgotOtpLoading]   = useState(false);
-  const [forgotResendLoading, setForgotResendLoading] = useState(false);
-  const [forgotResetToken, setForgotResetToken]   = useState('');
+  // Token issued by backend after OTP verification
+  const [forgotVerifiedToken, setForgotVerifiedToken] = useState('');
 
   // Derived
   const pwdStrength = regPwd.length === 0 ? null : regPwd.length < 8 ? 'weak' : 'ok';
@@ -281,6 +267,7 @@ export function LoginPage({ onLoginSuccess, onBack, theme = 'green' }) {
     setForgotErr('');
     setForgotSuccess('');
     setForgotStep('email');
+    setForgotVerifiedToken('');
     setRegStep(null);
     setRegOtp('');
     setForgotOtp('');
@@ -416,44 +403,23 @@ export function LoginPage({ onLoginSuccess, onBack, theme = 'green' }) {
     if (pwd.length < 8)           { setRegErr('Password must be at least 8 characters.'); return; }
     if (pwd !== conf)             { setRegErr('Passwords do not match.'); return; }
 
-    // Check if account is already registered locally
-    const stored = getStoredUsers();
-    const existing = stored.find(u => u.email.toLowerCase() === email.toLowerCase());
-    if (existing && existing.verified !== false) {
-      setRegErr('An account with this email already exists. Please sign in.');
-      return;
-    }
-
     setRegLoading(true);
     try {
       const userRole = isBlue ? 'Admin' : 'User';
 
-      // Attempt Supabase sign up
-      let supabaseSessionUser = null;
+      // Call Supabase Auth signUp
+      const signUpResult = await signUpWithPassword(email, pwd, name);
+      const user = signUpResult?.user;
+      const session = signUpResult?.session;
 
-      try {
-        const { user, session } = await signUpWithPassword(email, pwd, name);
-        if (session && user) {
-          // Immediately confirmed and logged in by Supabase session
-          supabaseSessionUser = user;
-        } else if (user && !session) {
-          // Supabase signup requires OTP email verification
-          setPendingRegUser({ name, email, pwd, role: userRole, supabaseMode: true });
-          setRegOtpCooldown(60);
-          setRegStep('otp');
-          setRegOtp('');
-          setRegSuccess(`Verification code sent to ${email}. Please enter the code to verify your account.`);
-          return;
-        }
-      } catch (sbErr) {
-        console.warn('Supabase sign-up note:', sbErr?.message);
-        if (sbErr?.message?.toLowerCase().includes('already registered')) {
-          throw new Error('An account with this email already exists. Please sign in.');
-        }
+      // Check if user already exists (Supabase returns empty identities array when user already registered and email confirmation is on)
+      if (user && Array.isArray(user.identities) && user.identities.length === 0) {
+        throw new Error('An account with this email already exists. Please sign in or check your email to verify.');
       }
 
-      if (supabaseSessionUser) {
-        const profile = getProfileFromUser(supabaseSessionUser);
+      // Case 1: Session returned immediately (email confirmation disabled in Supabase)
+      if (session && user) {
+        const profile = getProfileFromUser(user);
         if (isBlue) profile.role = 'Admin';
         storeUser({ name, email, password: pwd, role: userRole, verified: true });
         setRegSuccess('Account created and verified! Entering dashboard…');
@@ -463,24 +429,27 @@ export function LoginPage({ onLoginSuccess, onBack, theme = 'green' }) {
         return;
       }
 
-      // If Supabase requires offline verification or is rate limited:
-      // Require entering 6-digit OTP code before the account is activated
-      const verificationCode = Math.floor(100000 + Math.random() * 900000).toString();
-      setPendingRegUser({
-        name,
-        email,
-        pwd,
-        role: userRole,
-        localOtp: verificationCode,
-        supabaseMode: false,
-      });
-      setRegOtpCooldown(60);
-      setRegStep('otp');
-      setRegOtp('');
-      setRegErr('');
-      setRegSuccess(`Verification code sent to ${email}. (Verification code: ${verificationCode})`);
+      // Case 2: User created, awaiting email OTP confirmation
+      if (user) {
+        setPendingRegUser({ name, email, pwd, role: userRole, supabaseMode: true });
+        setRegOtpCooldown(60);
+        setRegStep('otp');
+        setRegOtp('');
+        setRegSuccess(`A 6-digit verification code has been sent to ${email}. Please enter it below to activate your account.`);
+        return;
+      }
+
+      throw new Error('Registration could not be completed. Please try again.');
     } catch (err) {
-      setRegErr(err.message || 'Failed to create account. Please try again.');
+      console.error('[FabriSense Auth] Registration error:', err?.message || err);
+      const msg = err?.message || '';
+      if (msg.toLowerCase().includes('already registered')) {
+        setRegErr('An account with this email already exists. Please sign in.');
+      } else if (msg.toLowerCase().includes('rate limit')) {
+        setRegErr('Email rate limit exceeded. Please wait a few minutes before trying again.');
+      } else {
+        setRegErr(msg || 'Failed to create account. Please try again.');
+      }
     } finally {
       setRegLoading(false);
     }
@@ -498,39 +467,22 @@ export function LoginPage({ onLoginSuccess, onBack, theme = 'green' }) {
 
     setRegOtpLoading(true);
     try {
-      let isVerified = false;
-      let profile = null;
-
-      if (pendingRegUser?.supabaseMode) {
-        try {
-          const { user } = await verifySignupOtp(pendingRegUser?.email, regOtp);
-          if (user) {
-            isVerified = true;
-            profile = getProfileFromUser(user);
-            if (isBlue) profile.role = 'Admin';
-          }
-        } catch (err) {
-          console.warn('Supabase OTP verification notice:', err.message);
-          // Check if matches local OTP backup if any
-          if (pendingRegUser?.localOtp && regOtp === pendingRegUser.localOtp) {
-            isVerified = true;
-          } else {
-            throw new Error(err.message || 'Invalid verification code. Please check and try again.');
-          }
-        }
-      } else {
-        if (pendingRegUser?.localOtp && regOtp === pendingRegUser.localOtp) {
-          isVerified = true;
-        } else {
-          throw new Error('Invalid verification code. Please check and try again.');
-        }
+      const email = pendingRegUser?.email;
+      if (!email) {
+        throw new Error('Registration session expired. Please sign up again.');
       }
 
-      if (!isVerified) {
-        throw new Error('Verification failed. Invalid code entered.');
+      const result = await verifySignupOtp(email, regOtp);
+      const user = result?.user;
+
+      if (!user) {
+        throw new Error('Verification failed. Invalid or expired verification code.');
       }
 
-      // Store the verified account now that verification succeeded
+      const profile = getProfileFromUser(user);
+      if (isBlue) profile.role = 'Admin';
+
+      // Save user to local cache for offline convenience
       storeUser({
         name: pendingRegUser.name,
         email: pendingRegUser.email,
@@ -539,58 +491,49 @@ export function LoginPage({ onLoginSuccess, onBack, theme = 'green' }) {
         verified: true,
       });
 
-      if (!profile) {
-        profile = {
-          name: pendingRegUser.name,
-          email: pendingRegUser.email,
-          role: pendingRegUser.role,
-        };
-      }
-
       setRegSuccess('Account verified successfully! Entering dashboard…');
       setTimeout(() => {
         onLoginSuccess?.(profile);
       }, 400);
     } catch (err) {
-      setRegErr(err.message || 'Verification failed. Please try again.');
+      console.error('[FabriSense Auth] Registration OTP verification failed:', err?.message || err);
+      const msg = err?.message || '';
+      if (msg.toLowerCase().includes('expired') || msg.toLowerCase().includes('invalid')) {
+        setRegErr('Invalid or expired verification code. Please check your email or request a new code.');
+      } else {
+        setRegErr(msg || 'Verification failed. Please try again.');
+      }
     } finally {
       setRegOtpLoading(false);
     }
   };
 
   const handleRegResendOtp = async () => {
-    if (regResendLoading || regOtpCooldown > 0) return;
     setRegErr('');
     setRegSuccess('');
-    setRegResendLoading(true);
     try {
-      if (pendingRegUser?.supabaseMode) {
-        try {
-          await resendSignupOtp(pendingRegUser?.email);
-          setRegOtpCooldown(60);
-          setRegOtp('');
-          setRegSuccess('A new verification code has been sent to your email.');
-          return;
-        } catch (err) {
-          console.warn('Supabase resend note:', err.message);
-        }
+      const email = pendingRegUser?.email;
+      if (!email) {
+        setRegErr('Session expired. Please restart registration.');
+        return;
       }
-      const newCode = Math.floor(100000 + Math.random() * 900000).toString();
-      setPendingRegUser(prev => ({ ...prev, localOtp: newCode }));
+
+      await resendSignupOtp(email);
       setRegOtpCooldown(60);
       setRegOtp('');
-      setRegSuccess(`A new verification code has been sent to ${pendingRegUser?.email}. (Verification code: ${newCode})`);
+      setRegSuccess(`A new verification code has been sent to ${email}.`);
     } catch (err) {
-      if (err.cooldownRemaining) {
-        setRegOtpCooldown(err.cooldownRemaining);
+      console.error('[FabriSense Auth] Resend OTP error:', err?.message || err);
+      const msg = err?.message || '';
+      if (msg.toLowerCase().includes('rate limit')) {
+        setRegErr('Resend rate limit reached. Please wait before trying again.');
+      } else {
+        setRegErr(msg || 'Could not resend verification code. Please wait and try again.');
       }
-      setRegErr(err.message || 'Could not resend code. Please wait and try again.');
-    } finally {
-      setRegResendLoading(false);
     }
   };
 
-  // ── FORGOT PASSWORD — Step 1: request OTP ────────────────────────────────
+  // ── FORGOT PASSWORD — Step 1: request OTP via backend ───────────────────────
   const handleForgotSendOtp = async (e) => {
     e.preventDefault();
     setForgotErr('');
@@ -600,12 +543,12 @@ export function LoginPage({ onLoginSuccess, onBack, theme = 'green' }) {
 
     setForgotOtpLoading(true);
     try {
-      const result = await sendPasswordRecoveryOtp(email);
+      const result = await sendForgotPasswordOtp(email);
       setForgotOtpCooldown(result.cooldown || 60);
       setForgotOtp('');
+      setForgotVerifiedToken('');
       setForgotStep('otp');
-      // Do not reveal whether arbitrary email belongs to an existing account
-      setForgotSuccess(`If an account is associated with ${email}, a verification code has been sent.`);
+      setForgotSuccess(`A 6-digit verification code has been sent to ${email}. Please check your inbox.`);
     } catch (err) {
       setForgotErr(err.message || 'Failed to send verification code. Please try again.');
     } finally {
@@ -613,7 +556,7 @@ export function LoginPage({ onLoginSuccess, onBack, theme = 'green' }) {
     }
   };
 
-  // ── FORGOT PASSWORD — Step 2: verify OTP ─────────────────────────────────
+  // ── FORGOT PASSWORD — Step 2: verify OTP via backend ────────────────────────
   const handleForgotVerifyOtp = async (e) => {
     e.preventDefault();
     setForgotErr('');
@@ -621,7 +564,9 @@ export function LoginPage({ onLoginSuccess, onBack, theme = 'green' }) {
 
     setForgotOtpLoading(true);
     try {
-      await verifyPasswordRecoveryOtp(forgotEmail.trim(), forgotOtp);
+      const result = await verifyForgotPasswordOtp(forgotEmail.trim(), forgotOtp);
+      // Backend returns a verifiedToken that authorises the password reset
+      setForgotVerifiedToken(result.verifiedToken || '');
       setForgotStep('reset');
       setForgotSuccess('');
       setForgotOtp('');
@@ -633,26 +578,19 @@ export function LoginPage({ onLoginSuccess, onBack, theme = 'green' }) {
   };
 
   const handleForgotResendOtp = async () => {
-    if (forgotResendLoading || forgotOtpCooldown > 0) return;
     setForgotErr('');
     setForgotSuccess('');
-    setForgotResendLoading(true);
     try {
-      const result = await sendPasswordRecoveryOtp(forgotEmail.trim());
+      const result = await resendForgotPasswordOtp(forgotEmail.trim());
       setForgotOtpCooldown(result.cooldown || 60);
       setForgotOtp('');
-      setForgotSuccess(result.message || 'A new verification code has been sent to your email.');
+      setForgotSuccess('A new verification code has been sent to your email.');
     } catch (err) {
-      if (err.cooldownRemaining) {
-        setForgotOtpCooldown(err.cooldownRemaining);
-      }
       setForgotErr(err.message || 'Could not resend code. Please wait and try again.');
-    } finally {
-      setForgotResendLoading(false);
     }
   };
 
-  // ── FORGOT PASSWORD — Step 3: set new password ────────────────────────────
+  // ── FORGOT PASSWORD — Step 3: set new password via backend ──────────────────
   const handleResetPassword = async (e) => {
     e.preventDefault();
     setForgotErr('');
@@ -661,8 +599,8 @@ export function LoginPage({ onLoginSuccess, onBack, theme = 'green' }) {
 
     setForgotOtpLoading(true);
     try {
-      await updatePassword(newPwd);
-      await signOut();
+      // Use the backend token-based password reset (no Supabase session needed)
+      await backendResetPassword(forgotEmail.trim(), forgotVerifiedToken, newPwd);
 
       // Keep local registered user's password in sync
       const stored = getStoredUsers();
@@ -671,6 +609,7 @@ export function LoginPage({ onLoginSuccess, onBack, theme = 'green' }) {
         storeUser({ ...existing, password: newPwd, verified: true });
       }
 
+      setForgotVerifiedToken('');
       setForgotSuccess('Password updated! You can now sign in with your new password.');
       setLoginEmail(forgotEmail.trim());
       setLoginPwd('');
@@ -1093,7 +1032,6 @@ MODE: REGISTER — Step 2: OTP verification
                   onResend={handleRegResendOtp}
                   cooldown={regOtpCooldown}
                   setCooldown={setRegOtpCooldown}
-                  loading={regResendLoading}
                 />
               </form>
             </>
@@ -1194,7 +1132,6 @@ MODE: REGISTER — Step 2: OTP verification
                   onResend={handleForgotResendOtp}
                   cooldown={forgotOtpCooldown}
                   setCooldown={setForgotOtpCooldown}
-                  loading={forgotResendLoading}
                 />
               </form>
             </>

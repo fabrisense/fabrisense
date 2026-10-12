@@ -189,12 +189,39 @@ router.post('/sync', async (req, res) => {
 });
 
 /**
+ * GET /api/inspections/stats
+ * Shared KPI statistics endpoint for Mobile App and Web Inspector Dashboard
+ */
+router.get('/stats', async (req, res) => {
+  try {
+    const metrics = await DatabaseService.getDashboardMetrics();
+    return res.json({
+      success: true,
+      data: metrics,
+    });
+  } catch (error) {
+    console.error('[Inspections Stats Error]', error);
+    return res.status(500).json({ success: false, error: 'Failed to retrieve stats: ' + error.message });
+  }
+});
+
+/**
  * GET /api/inspections
  * Fetch shared inspections list (reads from Supabase or fallback SQLite)
  */
 router.get('/', async (req, res) => {
   try {
-    const result = await DatabaseService.getInspections({ limit: 50 });
+    const { limit, page, search, grade, status, userId, dateFrom, dateTo } = req.query;
+    const result = await DatabaseService.getInspections({
+      limit: limit ? parseInt(limit, 10) : 50,
+      page: page ? parseInt(page, 10) : 1,
+      search: search || '',
+      grade: grade || '',
+      status: status || '',
+      userId: userId || '',
+      dateFrom: dateFrom || '',
+      dateTo: dateTo || '',
+    });
     return res.json({
       success: true,
       data: result.inspections,

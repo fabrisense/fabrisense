@@ -9,39 +9,77 @@ const SUPABASE_URL = (import.meta.env.VITE_SUPABASE_URL || '')
   .trim()
   .replace(/\/+$/, '')
   .replace(/\/rest\/v1$/i, '');
-const SUPABASE_ANON_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY || '';
+const SUPABASE_ANON_KEY = (import.meta.env.VITE_SUPABASE_ANON_KEY || '').trim();
 const STORAGE_BUCKET = import.meta.env.VITE_SUPABASE_STORAGE_BUCKET || 'inspection-images';
 
 let supabaseClient = null;
+let _initError = null;
 
 /**
- * Returns true if Supabase frontend credentials are set
+ * Validates that the key is a valid Supabase client key.
+ * Supports modern publishable keys ('sb_publishable_*') and legacy JWT keys ('eyJ*').
  */
-export function isSupabaseConfigured() {
-  return Boolean(SUPABASE_URL && SUPABASE_ANON_KEY);
+function isValidSupabaseKey(key) {
+  if (typeof key !== 'string') return false;
+  const trimmed = key.trim();
+  return (
+    (trimmed.startsWith('eyJ') && trimmed.length > 50) ||
+    (trimmed.startsWith('sb_publishable_') && trimmed.length > 20)
+  );
 }
 
 /**
- * Returns singleton Supabase client or null
+ * Returns true if Supabase frontend credentials are present and valid.
+ */
+export function isSupabaseConfigured() {
+  return Boolean(
+    SUPABASE_URL &&
+    SUPABASE_URL.startsWith('https://') &&
+    SUPABASE_URL.includes('.supabase.co') &&
+    isValidSupabaseKey(SUPABASE_ANON_KEY)
+  );
+}
+
+/**
+ * Returns singleton Supabase client or null.
+ * Never throws — returns null if not configured or on init error.
  */
 export function getSupabase() {
-  if (!isSupabaseConfigured()) return null;
-  if (!supabaseClient) {
-    supabaseClient = createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
-      auth: {
-        persistSession: true,
-        autoRefreshToken: true,
-      },
-    });
+  if (!isSupabaseConfigured()) {
+    if (SUPABASE_URL || SUPABASE_ANON_KEY) {
+      // Credentials were set but are invalid — warn once
+      console.warn(
+        '[FabriSense] Supabase credentials found but appear invalid.\n' +
+        '  VITE_SUPABASE_URL must be https://xxxx.supabase.co\n' +
+        '  VITE_SUPABASE_ANON_KEY must be a valid publishable key (sb_publishable_...) or anon JWT (eyJ...)\n' +
+        '  Current URL:', SUPABASE_URL || '(empty)',
+        '  Key prefix:', SUPABASE_ANON_KEY.slice(0, 15) || '(empty)'
+      );
+    }
+    return null;
   }
-  return supabaseClient;
+  if (!supabaseClient && !_initError) {
+    try {
+      supabaseClient = createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
+        auth: {
+          persistSession: true,
+          autoRefreshToken: true,
+        },
+      });
+    } catch (err) {
+      _initError = err;
+      console.error('[FabriSense] Failed to initialise Supabase client:', err.message);
+      return null;
+    }
+  }
+  return _initError ? null : supabaseClient;
 }
 
 function requireSupabase() {
   const supabase = getSupabase();
   if (!supabase) {
     throw new Error(
-      'Supabase is not configured. Set VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY in frontend/.env, then restart the frontend.',
+      'Supabase is not configured. Set VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY in frontend/.env, then restart the dev server.',
     );
   }
   return supabase;
@@ -78,13 +116,27 @@ export async function verifySignupOtp(email, token) {
     token,
     type: 'signup',
   });
-  if (error) throw error;
+  if (error) {
+    // If 'signup' verification type fails, try 'email' type (used when project OTP template or signInWithOtp is used)
+    const fallback = await requireSupabase().auth.verifyOtp({
+      email,
+      token,
+      type: 'email',
+    });
+    if (!fallback.error && fallback.data?.user) {
+      return fallback.data;
+    }
+    throw error;
+  }
   return data;
 }
 
 export async function resendSignupOtp(email) {
   const { error } = await requireSupabase().auth.resend({ email, type: 'signup' });
-  if (error) throw error;
+  if (error) {
+    // If type 'signup' resend fails, try resending without type or type 'signup'
+    throw error;
+  }
 }
 
 export async function sendPasswordRecoveryOtp(email) {
