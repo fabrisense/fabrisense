@@ -1294,6 +1294,7 @@ export function Dashboard({ userData = {}, onLogout }) {
               <InspectionResultFlow
                 capturedImage={capturedImage}
                 resultType={analysisResultType}
+                defectData={analysisDefectData}
                 onSaveBatch={handleSaveBatchFromFlow}
                 onBackToHome={() => handleTabChange('home')}
                 onRescan={handleRescan}
