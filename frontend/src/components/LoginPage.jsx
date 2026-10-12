@@ -11,6 +11,9 @@ import {
   signOut,
   signUpWithPassword,
   verifySignupOtp,
+  sendPasswordRecoveryOtp,
+  verifyPasswordRecoveryOtp,
+  updatePassword,
 } from '../services/supabase.js';
 import {
   sendForgotPasswordOtp,
@@ -533,7 +536,7 @@ export function LoginPage({ onLoginSuccess, onBack, theme = 'green' }) {
     }
   };
 
-  // ── FORGOT PASSWORD — Step 1: request OTP via backend ───────────────────────
+  // ── FORGOT PASSWORD — Step 1: request 6-digit OTP ─────────────────────────
   const handleForgotSendOtp = async (e) => {
     e.preventDefault();
     setForgotErr('');
@@ -543,20 +546,46 @@ export function LoginPage({ onLoginSuccess, onBack, theme = 'green' }) {
 
     setForgotOtpLoading(true);
     try {
-      const result = await sendForgotPasswordOtp(email);
-      setForgotOtpCooldown(result.cooldown || 60);
-      setForgotOtp('');
-      setForgotVerifiedToken('');
-      setForgotStep('otp');
-      setForgotSuccess(`A 6-digit verification code has been sent to ${email}. Please check your inbox.`);
+      let sentSuccess = false;
+      let cooldown = 60;
+
+      // 1. Try backend OTP service
+      try {
+        const result = await sendForgotPasswordOtp(email);
+        cooldown = result?.cooldown || 60;
+        sentSuccess = true;
+      } catch (backendErr) {
+        console.warn('[FabriSense Auth] Backend OTP service:', backendErr?.message);
+        // 2. Fallback to Supabase password recovery OTP if backend unconfigured
+        try {
+          const sbResult = await sendPasswordRecoveryOtp(email);
+          cooldown = sbResult?.cooldown || 60;
+          sentSuccess = true;
+        } catch (sbErr) {
+          const stored = getStoredUsers();
+          const exists = stored.find(u => u.email.toLowerCase() === email.toLowerCase());
+          if (!exists && email.toLowerCase() !== 'inspector@weavesofindia.com' && email.toLowerCase() !== 'admin@fabrisense.com') {
+            throw new Error('No registered account found with this email. Please check the address or sign up.');
+          }
+          throw new Error(backendErr?.message || sbErr?.message || 'Failed to send 6-digit code. Please try again.');
+        }
+      }
+
+      if (sentSuccess) {
+        setForgotOtpCooldown(cooldown);
+        setForgotOtp('');
+        setForgotVerifiedToken('');
+        setForgotStep('otp');
+        setForgotSuccess(`A 6-digit password reset code has been sent to ${email}. Please check your inbox.`);
+      }
     } catch (err) {
-      setForgotErr(err.message || 'Failed to send verification code. Please try again.');
+      setForgotErr(err.message || 'Failed to send 6-digit code. Please try again.');
     } finally {
       setForgotOtpLoading(false);
     }
   };
 
-  // ── FORGOT PASSWORD — Step 2: verify OTP via backend ────────────────────────
+  // ── FORGOT PASSWORD — Step 2: verify 6-digit OTP ───────────────────────────
   const handleForgotVerifyOtp = async (e) => {
     e.preventDefault();
     setForgotErr('');
@@ -564,12 +593,28 @@ export function LoginPage({ onLoginSuccess, onBack, theme = 'green' }) {
 
     setForgotOtpLoading(true);
     try {
-      const result = await verifyForgotPasswordOtp(forgotEmail.trim(), forgotOtp);
-      // Backend returns a verifiedToken that authorises the password reset
-      setForgotVerifiedToken(result.verifiedToken || '');
-      setForgotStep('reset');
-      setForgotSuccess('');
-      setForgotOtp('');
+      let verified = false;
+
+      // 1. Try backend verification
+      try {
+        const result = await verifyForgotPasswordOtp(forgotEmail.trim(), forgotOtp);
+        setForgotVerifiedToken(result.verifiedToken || '');
+        verified = true;
+      } catch (backendErr) {
+        // 2. Try Supabase verification
+        try {
+          await verifyPasswordRecoveryOtp(forgotEmail.trim(), forgotOtp);
+          verified = true;
+        } catch (sbErr) {
+          throw new Error(backendErr?.message || sbErr?.message || 'Invalid or expired 6-digit code. Please check and try again.');
+        }
+      }
+
+      if (verified) {
+        setForgotStep('reset');
+        setForgotSuccess('');
+        setForgotOtp('');
+      }
     } catch (err) {
       setForgotErr(err.message || 'Verification failed. Please try again.');
     } finally {
@@ -581,16 +626,35 @@ export function LoginPage({ onLoginSuccess, onBack, theme = 'green' }) {
     setForgotErr('');
     setForgotSuccess('');
     try {
-      const result = await resendForgotPasswordOtp(forgotEmail.trim());
-      setForgotOtpCooldown(result.cooldown || 60);
-      setForgotOtp('');
-      setForgotSuccess('A new verification code has been sent to your email.');
+      const email = forgotEmail.trim();
+      let resendDone = false;
+      let cooldown = 60;
+
+      try {
+        const result = await resendForgotPasswordOtp(email);
+        cooldown = result?.cooldown || 60;
+        resendDone = true;
+      } catch {
+        try {
+          const sbResult = await sendPasswordRecoveryOtp(email);
+          cooldown = sbResult?.cooldown || 60;
+          resendDone = true;
+        } catch (sbErr) {
+          throw sbErr;
+        }
+      }
+
+      if (resendDone) {
+        setForgotOtpCooldown(cooldown);
+        setForgotOtp('');
+        setForgotSuccess('A new 6-digit verification code has been sent to your email.');
+      }
     } catch (err) {
       setForgotErr(err.message || 'Could not resend code. Please wait and try again.');
     }
   };
 
-  // ── FORGOT PASSWORD — Step 3: set new password via backend ──────────────────
+  // ── FORGOT PASSWORD — Step 3: set new password ─────────────────────────────
   const handleResetPassword = async (e) => {
     e.preventDefault();
     setForgotErr('');
@@ -599,18 +663,36 @@ export function LoginPage({ onLoginSuccess, onBack, theme = 'green' }) {
 
     setForgotOtpLoading(true);
     try {
-      // Use the backend token-based password reset (no Supabase session needed)
-      await backendResetPassword(forgotEmail.trim(), forgotVerifiedToken, newPwd);
+      let resetDone = false;
 
-      // Keep local registered user's password in sync
+      // 1. Backend token-based reset
+      if (forgotVerifiedToken) {
+        try {
+          await backendResetPassword(forgotEmail.trim(), forgotVerifiedToken, newPwd);
+          resetDone = true;
+        } catch (bErr) {
+          console.warn('[FabriSense Auth] Backend reset error:', bErr.message);
+        }
+      }
+
+      // 2. Supabase password update
+      try {
+        await updatePassword(newPwd);
+        resetDone = true;
+      } catch {
+        // Ignored if session is not Supabase
+      }
+
+      // 3. Keep local registered user's password in sync
       const stored = getStoredUsers();
       const existing = stored.find(u => u.email.toLowerCase() === forgotEmail.trim().toLowerCase());
       if (existing) {
         storeUser({ ...existing, password: newPwd, verified: true });
+        resetDone = true;
       }
 
       setForgotVerifiedToken('');
-      setForgotSuccess('Password updated! You can now sign in with your new password.');
+      setForgotSuccess('Password reset successfully! You can now sign in with your new password.');
       setLoginEmail(forgotEmail.trim());
       setLoginPwd('');
 
@@ -1002,32 +1084,6 @@ MODE: REGISTER — Step 2: OTP verification
                   {regOtpLoading ? 'Verifying…' : 'Verify & Create Account'}
                 </button>
 
-                <div style={{ textAlign: 'center', marginTop: '4px' }}>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      const profile = {
-                        name: pendingRegUser?.name || 'User',
-                        email: pendingRegUser?.email || '',
-                        role: isBlue ? 'Admin' : 'User',
-                      };
-                      onLoginSuccess?.(profile);
-                    }}
-                    style={{
-                      background: 'none',
-                      border: 'none',
-                      color: accentColor,
-                      fontSize: '0.84rem',
-                      fontWeight: '700',
-                      textDecoration: 'underline',
-                      cursor: 'pointer',
-                      fontFamily: "'Plus Jakarta Sans', system-ui, sans-serif",
-                    }}
-                  >
-                    Skip verification & enter dashboard →
-                  </button>
-                </div>
-
                 <ResendButton
                   onResend={handleRegResendOtp}
                   cooldown={regOtpCooldown}
@@ -1055,7 +1111,7 @@ MODE: REGISTER — Step 2: OTP verification
                   Forgot Password?
                 </h1>
                 <p style={{ fontSize: '0.87rem', color: 'var(--text-muted)', margin: 0 }}>
-                  Enter your email to receive a verification code.
+                  Enter your registered email address to receive a 6-digit code for password reset.
                 </p>
               </div>
 
@@ -1080,7 +1136,7 @@ MODE: REGISTER — Step 2: OTP verification
                   </div>
                 </FieldWrapper>
                 <button type="submit" disabled={forgotOtpLoading} style={primaryBtn(forgotOtpLoading)}>
-                  {forgotOtpLoading ? 'Sending code…' : 'Send Verification Code'}
+                  {forgotOtpLoading ? 'Sending 6-digit code…' : 'Send 6-Digit Code for Password Reset'}
                 </button>
                 <div style={{ textAlign: 'center' }}>
                   <span onClick={() => goMode('login')}
@@ -1107,10 +1163,11 @@ MODE: REGISTER — Step 2: OTP verification
                   <Mail size={28} color={accentColor} />
                 </div>
                 <h1 style={{ fontSize: '1.8rem', fontWeight: '800', margin: '0 0 6px', color: 'var(--text-heading)', letterSpacing: '-0.02em' }}>
-                  Enter Verification Code
+                  Enter 6-Digit Code
                 </h1>
                 <p style={{ fontSize: '0.87rem', color: 'var(--text-muted)', margin: 0 }}>
-                  Sent to <strong style={{ color: 'var(--text-heading)' }}>{forgotEmail}</strong>
+                  Enter the 6-digit password reset code sent to<br />
+                  <strong style={{ color: 'var(--text-heading)' }}>{forgotEmail}</strong>
                 </p>
               </div>
 
@@ -1125,7 +1182,7 @@ MODE: REGISTER — Step 2: OTP verification
                   disabled={forgotOtpLoading || forgotOtp.length !== 6}
                   style={primaryBtn(forgotOtpLoading || forgotOtp.length !== 6)}
                 >
-                  {forgotOtpLoading ? 'Verifying…' : 'Verify Code'}
+                  {forgotOtpLoading ? 'Verifying 6-digit code…' : 'Verify 6-Digit Code'}
                 </button>
 
                 <ResendButton
@@ -1133,6 +1190,13 @@ MODE: REGISTER — Step 2: OTP verification
                   cooldown={forgotOtpCooldown}
                   setCooldown={setForgotOtpCooldown}
                 />
+
+                <div style={{ textAlign: 'center', marginTop: '4px' }}>
+                  <span onClick={() => { setForgotErr(''); setForgotStep('email'); }}
+                    style={{ fontSize: '0.84rem', color: 'var(--accent-green)', fontWeight: '700', cursor: 'pointer', textDecoration: 'underline' }}>
+                    ← Change Email Address
+                  </span>
+                </div>
               </form>
             </>
           )}

@@ -33,9 +33,6 @@ export function OnboardingFlow({ onComplete }) {
     }
   };
 
-  const handleSkip = () => {
-    if (onComplete) onComplete();
-  };
 
   const slide = slides[currentStep];
 
@@ -74,12 +71,12 @@ export function OnboardingFlow({ onComplete }) {
         }}
       >
 
-        {/* Header Bar: Logo & Skip Button */}
+        {/* Header Bar: Logo */}
         <div
           style={{
             width: '100%',
             display: 'flex',
-            justifyContent: 'space-between',
+            justifyContent: 'flex-start',
             alignItems: 'center',
             marginBottom: '20px',
           }}
@@ -102,28 +99,6 @@ export function OnboardingFlow({ onComplete }) {
               FabriSense
             </span>
           </div>
-
-          {/* Skip Button */}
-          <button
-            onClick={handleSkip}
-            style={{
-              padding: '6px 16px',
-              borderRadius: '20px',
-              border: '1.5px solid var(--accent-green)',
-              backgroundColor: 'var(--accent-green-soft)',
-              color: 'var(--text-green)',
-              fontWeight: '700',
-              fontSize: '0.82rem',
-              cursor: 'pointer',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              transition: 'all 0.2s ease',
-              boxShadow: 'var(--shadow-green-glow)',
-            }}
-          >
-            Skip
-          </button>
         </div>
 
         {/* Hero Image Card */}
