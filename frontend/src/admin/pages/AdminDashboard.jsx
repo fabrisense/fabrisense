@@ -35,6 +35,11 @@ export function AdminDashboard() {
   useEffect(() => {
     loadData();
 
+    // 10-second polling fallback ensures data sync even if Realtime WebSockets are blocked/reconnecting
+    const pollInterval = setInterval(() => {
+      loadData(true);
+    }, 10000);
+
     // Realtime listeners: auto-refresh metrics when mobile or admin records change
     const unsubInspections = subscribeToInspections(() => {
       console.log('[Realtime] Inspection event received, refreshing dashboard metrics.');
@@ -46,6 +51,7 @@ export function AdminDashboard() {
     });
 
     return () => {
+      clearInterval(pollInterval);
       unsubInspections();
       unsubDefects();
     };
@@ -71,16 +77,25 @@ export function AdminDashboard() {
     );
   }
 
-  const { kpis, recentInspections = [], liveDefects = [] } = data || {};
+  const { kpis, recentInspections = [], liveDefects = [], trends = [], defectDistribution = [] } = data || {};
 
-  // Standard reference donut slices (Holes 32%, Stains 28%, Broken Yarn 22%, Tears & Scratches 12%, Other 6%)
-  const donutItems = [
-    { name: 'Holes', pct: 32, color: '#dc2626' },
-    { name: 'Stains', pct: 28, color: '#ea580c' },
-    { name: 'Broken Yarn', pct: 22, color: '#16806e' },
-    { name: 'Tears & Scratches', pct: 12, color: '#2563eb' },
-    { name: 'Other', pct: 6, color: '#94a3b8' },
-  ];
+  const totalInspectionsCount = kpis?.totalInspections || 0;
+  const totalDefectsCount = kpis?.defectsDetected || 0;
+  const defectFreeCount = kpis?.defectFree || 0;
+
+  // Real Donut Slices calculated dynamically from defectDistribution
+  const donutItems = (defectDistribution || [])
+    .map((item) => {
+      const count = item.count || 0;
+      const pct = totalDefectsCount > 0 ? Math.round((count / totalDefectsCount) * 100) : 0;
+      return {
+        name: item.name,
+        count,
+        pct,
+        color: item.color || '#64748b',
+      };
+    })
+    .filter((item) => item.count > 0);
 
   let accPct = 0;
   const donutSlices = donutItems.map((item) => {
@@ -93,9 +108,39 @@ export function AdminDashboard() {
     };
   });
 
+  // Dynamic 6-Month Inspection Trend Line
+  const trendMonths = (trends && trends.length > 0) ? trends : [
+    { month: 'Apr', total: 0 },
+    { month: 'May', total: 0 },
+    { month: 'Jun', total: 0 },
+    { month: 'Jul', total: 0 },
+    { month: 'Aug', total: 0 },
+    { month: 'Sep', total: 0 },
+  ];
+  const maxTrendTotal = Math.max(...trendMonths.map((t) => t.total || 0), 1);
+  const trendPoints = trendMonths.map((t, idx) => {
+    const x = 25 + idx * ((480 - 50) / Math.max(trendMonths.length - 1, 1));
+    const y = 140 - Math.round(((t.total || 0) / maxTrendTotal) * 110);
+    return { x, y, total: t.total || 0, month: t.month };
+  });
+
+  let trendPathD = '';
+  if (trendPoints.length > 0) {
+    trendPathD = `M ${trendPoints[0].x} ${trendPoints[0].y}`;
+    for (let i = 1; i < trendPoints.length; i++) {
+      const prev = trendPoints[i - 1];
+      const curr = trendPoints[i];
+      const cx1 = prev.x + (curr.x - prev.x) / 2;
+      const cy1 = prev.y;
+      const cx2 = prev.x + (curr.x - prev.x) / 2;
+      const cy2 = curr.y;
+      trendPathD += ` C ${cx1} ${cy1}, ${cx2} ${cy2}, ${curr.x} ${curr.y}`;
+    }
+  }
+
   return (
     <div style={{ maxWidth: '1440px', margin: '0 auto' }}>
-      {/* ── 6 KPI CARDS (Matching Screenshot 1 exactly) ── */}
+      {/* ── 6 KPI CARDS ── */}
       <div
         style={{
           display: 'grid',
@@ -110,10 +155,10 @@ export function AdminDashboard() {
             TOTAL INSPECTIONS
           </div>
           <div style={{ fontSize: '28px', fontWeight: '800', color: '#1f2a44', margin: '6px 0 2px' }}>
-            {kpis?.totalInspections ? kpis.totalInspections.toLocaleString() : '1,247'}
+            {totalInspectionsCount.toLocaleString()}
           </div>
           <div style={{ fontSize: '11.5px', fontWeight: '600', color: '#16a34a' }}>
-            +12% this week
+            {totalInspectionsCount > 0 ? 'Live synced records' : 'No inspections recorded'}
           </div>
         </div>
 
@@ -123,10 +168,10 @@ export function AdminDashboard() {
             DEFECTS DETECTED
           </div>
           <div style={{ fontSize: '28px', fontWeight: '800', color: '#1f2a44', margin: '6px 0 2px' }}>
-            {kpis?.defectsDetected ? kpis.defectsDetected.toLocaleString() : '523'}
+            {totalDefectsCount.toLocaleString()}
           </div>
           <div style={{ fontSize: '11.5px', fontWeight: '600', color: '#dc2626' }}>
-            42.1% anomaly rate
+            {totalInspectionsCount > 0 ? `${((totalDefectsCount / totalInspectionsCount) * 100).toFixed(1)}% anomaly rate` : '0% anomaly rate'}
           </div>
         </div>
 
@@ -136,10 +181,10 @@ export function AdminDashboard() {
             DEFECT-FREE
           </div>
           <div style={{ fontSize: '28px', fontWeight: '800', color: '#1f2a44', margin: '6px 0 2px' }}>
-            {kpis?.defectFree ? kpis.defectFree.toLocaleString() : '724'}
+            {defectFreeCount.toLocaleString()}
           </div>
           <div style={{ fontSize: '11.5px', fontWeight: '600', color: '#16806e' }}>
-            57.9% clean rate
+            {totalInspectionsCount > 0 ? `${((defectFreeCount / totalInspectionsCount) * 100).toFixed(1)}% clean rate` : '0% clean rate'}
           </div>
         </div>
 
@@ -149,10 +194,10 @@ export function AdminDashboard() {
             GRADE A
           </div>
           <div style={{ fontSize: '28px', fontWeight: '800', color: '#16a34a', margin: '6px 0 2px' }}>
-            {kpis?.gradeAPercentage || 58}%
+            {kpis?.gradeAPercentage ?? 0}%
           </div>
           <div style={{ fontSize: '11.5px', fontWeight: '600', color: '#16a34a' }}>
-            723 Batches
+            {kpis?.gradeACount ?? 0} Batches
           </div>
         </div>
 
@@ -162,10 +207,10 @@ export function AdminDashboard() {
             GRADE B
           </div>
           <div style={{ fontSize: '28px', fontWeight: '800', color: '#d97706', margin: '6px 0 2px' }}>
-            {kpis?.gradeBPercentage || 31}%
+            {kpis?.gradeBPercentage ?? 0}%
           </div>
           <div style={{ fontSize: '11.5px', fontWeight: '600', color: '#d97706' }}>
-            386 Batches
+            {kpis?.gradeBCount ?? 0} Batches
           </div>
         </div>
 
@@ -175,10 +220,10 @@ export function AdminDashboard() {
             GRADE C
           </div>
           <div style={{ fontSize: '28px', fontWeight: '800', color: '#dc2626', margin: '6px 0 2px' }}>
-            {kpis?.gradeCPercentage || 11}%
+            {kpis?.gradeCPercentage ?? 0}%
           </div>
           <div style={{ fontSize: '11.5px', fontWeight: '600', color: '#dc2626' }}>
-            138 Batches
+            {kpis?.gradeCCount ?? 0} Batches
           </div>
         </div>
       </div>
@@ -207,25 +252,35 @@ export function AdminDashboard() {
               <div style={{ borderBottom: '1px solid #e2e8f0', width: '100%' }} />
             </div>
 
-            {/* Smooth Teal Trend Line (Matching Screenshot 1) */}
+            {/* Dynamic Trend Line */}
             <svg viewBox="0 0 500 160" preserveAspectRatio="none" style={{ width: '100%', height: '160px', overflow: 'visible' }}>
-              <path
-                d="M 10 110 C 60 95, 80 85, 110 80 C 140 75, 170 95, 200 90 C 240 80, 270 40, 310 40 C 350 40, 380 55, 410 50 C 440 45, 470 10, 490 10"
-                fill="none"
-                stroke="#16806e"
-                strokeWidth="3"
-                strokeLinecap="round"
-              />
+              {trendPathD && (
+                <path
+                  d={trendPathD}
+                  fill="none"
+                  stroke="#16806e"
+                  strokeWidth="3"
+                  strokeLinecap="round"
+                />
+              )}
+              {trendPoints.map((pt, i) => (
+                <circle
+                  key={i}
+                  cx={pt.x}
+                  cy={pt.y}
+                  r="4"
+                  fill="#ffffff"
+                  stroke="#16806e"
+                  strokeWidth="2.5"
+                />
+              ))}
             </svg>
 
-            {/* X-axis labels */}
+            {/* Dynamic X-axis labels */}
             <div style={{ display: 'flex', justifyContent: 'space-between', padding: '12px 10px 0', fontSize: '12px', color: '#94a3b8' }}>
-              <span>Apr</span>
-              <span>May</span>
-              <span>Jun</span>
-              <span>Jul</span>
-              <span>Aug</span>
-              <span>Sep</span>
+              {trendMonths.map((m, idx) => (
+                <span key={idx}>{m.month}</span>
+              ))}
             </div>
           </div>
         </div>
@@ -240,23 +295,34 @@ export function AdminDashboard() {
             {/* Donut graphic */}
             <div style={{ position: 'relative', width: '170px', height: '170px' }}>
               <svg viewBox="0 0 100 100" style={{ transform: 'rotate(-90deg)', width: '100%', height: '100%' }}>
-                {donutSlices.map((slice, i) => {
-                  const strokeDasharray = `${(slice.pct / 100) * 251.2} 251.2`;
-                  const strokeDashoffset = -((slice.startAngle / 360) * 251.2);
-                  return (
-                    <circle
-                      key={i}
-                      cx="50"
-                      cy="50"
-                      r="40"
-                      fill="transparent"
-                      stroke={slice.color}
-                      strokeWidth="15"
-                      strokeDasharray={strokeDasharray}
-                      strokeDashoffset={strokeDashoffset}
-                    />
-                  );
-                })}
+                {donutSlices.length === 0 ? (
+                  <circle
+                    cx="50"
+                    cy="50"
+                    r="40"
+                    fill="transparent"
+                    stroke="#e2e8f0"
+                    strokeWidth="15"
+                  />
+                ) : (
+                  donutSlices.map((slice, i) => {
+                    const strokeDasharray = `${(slice.pct / 100) * 251.2} 251.2`;
+                    const strokeDashoffset = -((slice.startAngle / 360) * 251.2);
+                    return (
+                      <circle
+                        key={i}
+                        cx="50"
+                        cy="50"
+                        r="40"
+                        fill="transparent"
+                        stroke={slice.color}
+                        strokeWidth="15"
+                        strokeDasharray={strokeDasharray}
+                        strokeDashoffset={strokeDashoffset}
+                      />
+                    );
+                  })
+                )}
               </svg>
               <div
                 style={{
@@ -269,7 +335,7 @@ export function AdminDashboard() {
                 }}
               >
                 <div style={{ fontSize: '24px', fontWeight: '800', color: '#1f2a44', lineHeight: 1 }}>
-                  523
+                  {totalDefectsCount.toLocaleString()}
                 </div>
                 <div style={{ fontSize: '11px', color: '#64748b', fontWeight: '600', marginTop: '2px' }}>
                   Defects
@@ -277,15 +343,21 @@ export function AdminDashboard() {
               </div>
             </div>
 
-            {/* Legend list matching Screenshot 1 */}
+            {/* Dynamic Legend list */}
             <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
-              {donutItems.map((item, idx) => (
-                <div key={idx} style={{ display: 'flex', alignItems: 'center', gap: '10px', fontSize: '13px' }}>
-                  <span style={{ width: '10px', height: '10px', borderRadius: '2px', backgroundColor: item.color }} />
-                  <span style={{ color: '#334155', minWidth: '120px' }}>{item.name}</span>
-                  <strong style={{ color: '#1f2a44' }}>{item.pct}%</strong>
+              {donutItems.length === 0 ? (
+                <div style={{ fontSize: '13px', color: '#94a3b8' }}>
+                  No defects recorded yet
                 </div>
-              ))}
+              ) : (
+                donutItems.map((item, idx) => (
+                  <div key={idx} style={{ display: 'flex', alignItems: 'center', gap: '10px', fontSize: '13px' }}>
+                    <span style={{ width: '10px', height: '10px', borderRadius: '2px', backgroundColor: item.color }} />
+                    <span style={{ color: '#334155', minWidth: '120px' }}>{item.name}</span>
+                    <strong style={{ color: '#1f2a44' }}>{item.pct}%</strong>
+                  </div>
+                ))
+              )}
             </div>
           </div>
         </div>
@@ -323,40 +395,48 @@ export function AdminDashboard() {
               </tr>
             </thead>
             <tbody>
-              {recentInspections.map((row) => (
-                <tr key={row.id} style={{ borderBottom: '1px solid #f8fafc' }}>
-                  <td style={{ padding: '12px 8px', fontWeight: '700', color: '#1f2a44' }}>
-                    <Link
-                      to={`/admin/inspections/${row.inspection_id}`}
-                      style={{ color: '#1f2a44', textDecoration: 'none' }}
-                    >
-                      {row.inspection_id}
-                    </Link>
-                  </td>
-                  <td style={{ padding: '12px 8px', color: '#475569' }}>
-                    {row.fabric_name || row.fabric_type}
-                  </td>
-                  <td style={{ padding: '12px 8px', color: '#475569' }}>
-                    {row.defect_count}
-                  </td>
-                  <td style={{ padding: '12px 8px' }}>
-                    <span
-                      style={{
-                        fontSize: '11px',
-                        fontWeight: '700',
-                        padding: '3px 10px',
-                        borderRadius: '20px',
-                        backgroundColor:
-                          row.grade === 'A' ? '#ecfdf5' : row.grade === 'B' ? '#fffbeb' : '#fef2f2',
-                        color:
-                          row.grade === 'A' ? '#059669' : row.grade === 'B' ? '#d97706' : '#dc2626',
-                      }}
-                    >
-                      Grade {row.grade}
-                    </span>
+              {recentInspections.length === 0 ? (
+                <tr>
+                  <td colSpan="4" style={{ textAlign: 'center', padding: '32px 16px', color: '#94a3b8' }}>
+                    No recent inspections recorded.
                   </td>
                 </tr>
-              ))}
+              ) : (
+                recentInspections.map((row) => (
+                  <tr key={row.id} style={{ borderBottom: '1px solid #f8fafc' }}>
+                    <td style={{ padding: '12px 8px', fontWeight: '700', color: '#1f2a44' }}>
+                      <Link
+                        to={`/admin/inspections/${row.inspection_id}`}
+                        style={{ color: '#1f2a44', textDecoration: 'none' }}
+                      >
+                        {row.inspection_id}
+                      </Link>
+                    </td>
+                    <td style={{ padding: '12px 8px', color: '#475569' }}>
+                      {row.fabric_name || row.fabric_type}
+                    </td>
+                    <td style={{ padding: '12px 8px', color: '#475569' }}>
+                      {row.defect_count}
+                    </td>
+                    <td style={{ padding: '12px 8px' }}>
+                      <span
+                        style={{
+                          fontSize: '11px',
+                          fontWeight: '700',
+                          padding: '3px 10px',
+                          borderRadius: '20px',
+                          backgroundColor:
+                            row.grade === 'A' ? '#ecfdf5' : row.grade === 'B' ? '#fffbeb' : '#fef2f2',
+                          color:
+                            row.grade === 'A' ? '#059669' : row.grade === 'B' ? '#d97706' : '#dc2626',
+                        }}
+                      >
+                        Grade {row.grade}
+                      </span>
+                    </td>
+                  </tr>
+                ))
+              )}
             </tbody>
           </table>
         </div>
@@ -368,53 +448,59 @@ export function AdminDashboard() {
           </div>
 
           <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
-            {liveDefects.map((def) => {
-              const badgeBg =
-                def.severity === 'Critical' ? '#fee2e2' : def.severity === 'Moderate' ? '#fef3c7' : '#fef9c3';
-              const badgeColor =
-                def.severity === 'Critical' ? '#dc2626' : def.severity === 'Moderate' ? '#d97706' : '#ca8a04';
+            {liveDefects.length === 0 ? (
+              <div style={{ textAlign: 'center', padding: '32px 16px', color: '#94a3b8' }}>
+                No recent defects recorded.
+              </div>
+            ) : (
+              liveDefects.map((def) => {
+                const badgeBg =
+                  def.severity === 'Critical' ? '#fee2e2' : def.severity === 'Moderate' ? '#fef3c7' : '#fef9c3';
+                const badgeColor =
+                  def.severity === 'Critical' ? '#dc2626' : def.severity === 'Moderate' ? '#d97706' : '#ca8a04';
 
-              return (
-                <div
-                  key={def.id}
-                  style={{
-                    padding: '12px 14px',
-                    borderRadius: '8px',
-                    backgroundColor: '#f8fafc',
-                    border: '1px solid #f1f5f9',
-                  }}
-                >
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                    <strong style={{ fontSize: '13.5px', color: '#1f2a44' }}>
-                      {def.defect_type}
-                    </strong>
-                    <span style={{ fontSize: '11.5px', color: '#94a3b8' }}>
-                      {def.time_ago}
-                    </span>
-                  </div>
+                return (
+                  <div
+                    key={def.id}
+                    style={{
+                      padding: '12px 14px',
+                      borderRadius: '8px',
+                      backgroundColor: '#f8fafc',
+                      border: '1px solid #f1f5f9',
+                    }}
+                  >
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                      <strong style={{ fontSize: '13.5px', color: '#1f2a44' }}>
+                        {def.defect_type}
+                      </strong>
+                      <span style={{ fontSize: '11.5px', color: '#94a3b8' }}>
+                        {def.time_ago}
+                      </span>
+                    </div>
 
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '4px', fontSize: '12px', color: '#64748b', margin: '4px 0 8px' }}>
-                    <MapPin size={12} color="#94a3b8" />
-                    <span>{def.fabric_name}</span>
-                  </div>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '4px', fontSize: '12px', color: '#64748b', margin: '4px 0 8px' }}>
+                      <MapPin size={12} color="#94a3b8" />
+                      <span>{def.fabric_name}</span>
+                    </div>
 
-                  <div>
-                    <span
-                      style={{
-                        fontSize: '11px',
-                        fontWeight: '700',
-                        padding: '2px 8px',
-                        borderRadius: '4px',
-                        backgroundColor: badgeBg,
-                        color: badgeColor,
-                      }}
-                    >
-                      {def.severity}
-                    </span>
+                    <div>
+                      <span
+                        style={{
+                          fontSize: '11px',
+                          fontWeight: '700',
+                          padding: '2px 8px',
+                          borderRadius: '4px',
+                          backgroundColor: badgeBg,
+                          color: badgeColor,
+                        }}
+                      >
+                        {def.severity}
+                      </span>
+                    </div>
                   </div>
-                </div>
-              );
-            })}
+                );
+              })
+            )}
           </div>
         </div>
       </div>

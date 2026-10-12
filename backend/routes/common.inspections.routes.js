@@ -19,21 +19,30 @@ router.post('/analyze', uploadInspectionImage.single('image'), async (req, res) 
   try {
     const { fabricType = 'Handloom Cotton Blend', fabricName = 'Fabric Sample' } = req.body;
     let imagePath = '/assets/indigo_denim.jpg';
+    let imageMetadata = null;
 
     if (req.file) {
       imagePath = `/uploads/inspections/${path.basename(req.file.path)}`;
 
-      // If Supabase Storage is configured, upload to cloud bucket
+      // If Supabase Storage is configured, upload to private bucket 'fabric-images'
       if (isSupabaseConfigured()) {
         try {
           const fileBuffer = fs.readFileSync(req.file.path);
-          const cloudUrl = await uploadToSupabaseStorage(
+          const cloudResult = await uploadToSupabaseStorage(
             fileBuffer,
             path.basename(req.file.path),
             req.file.mimetype || 'image/jpeg'
           );
-          if (cloudUrl) {
-            imagePath = cloudUrl;
+          if (cloudResult) {
+            imagePath = cloudResult.proxyUrl || cloudResult.signedUrl || cloudResult.url;
+            imageMetadata = {
+              storage_bucket: cloudResult.bucket,
+              storage_path: cloudResult.storagePath,
+              signed_url: cloudResult.signedUrl,
+              proxy_url: cloudResult.proxyUrl,
+              mime_type: cloudResult.mimeType,
+              size_bytes: cloudResult.sizeBytes,
+            };
           }
         } catch (uploadErr) {
           console.warn('[Storage Warning] Cloud upload failed, using local path:', uploadErr.message);
@@ -48,6 +57,7 @@ router.post('/analyze', uploadInspectionImage.single('image'), async (req, res) 
       success: true,
       data: {
         imagePath,
+        imageMetadata,
         ...aiResult,
       },
     });
@@ -83,6 +93,7 @@ router.post('/sync', async (req, res) => {
     const inspectionId = id || `INS-${new Date().getFullYear()}-${Math.floor(1000 + Math.random() * 9000)}`;
 
     let finalImagePath = imagePath;
+    let imageMetadata = null;
 
     // If a base64 data URL is provided, save it as a local JPEG and upload to Supabase Storage if configured
     if (typeof imagePath === 'string' && imagePath.startsWith('data:image/')) {
@@ -101,9 +112,17 @@ router.post('/sync', async (req, res) => {
 
           if (isSupabaseConfigured()) {
             try {
-              const cloudUrl = await uploadToSupabaseStorage(buffer, fileName, mimeType);
-              if (cloudUrl) {
-                finalImagePath = cloudUrl;
+              const cloudResult = await uploadToSupabaseStorage(buffer, fileName, mimeType);
+              if (cloudResult) {
+                finalImagePath = cloudResult.proxyUrl || cloudResult.signedUrl || cloudResult.url;
+                imageMetadata = {
+                  storage_bucket: cloudResult.bucket,
+                  storage_path: cloudResult.storagePath,
+                  signed_url: cloudResult.signedUrl,
+                  proxy_url: cloudResult.proxyUrl,
+                  mime_type: cloudResult.mimeType,
+                  size_bytes: cloudResult.sizeBytes,
+                };
               }
             } catch (cloudErr) {
               console.warn('[Storage Warning] Cloud upload for base64 failed, using local path:', cloudErr.message);
@@ -148,6 +167,7 @@ router.post('/sync', async (req, res) => {
       inspectorName,
       inspectorEmail,
       defects: normalizedDefects,
+      metadata: imageMetadata,
     });
 
     return res.json({
@@ -157,6 +177,7 @@ router.post('/sync', async (req, res) => {
         : 'Inspection saved to shared database.',
       inspectionId,
       imagePath: finalImagePath,
+      imageMetadata,
       driver: result.driver,
       cloudSync: result.cloudSync,
       warning: result.warning,

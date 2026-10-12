@@ -100,8 +100,20 @@ function OtpBoxes({ value, onChange, disabled }) {
     }
   };
 
+  const handlePaste = (e) => {
+    e.preventDefault();
+    const paste = (e.clipboardData || window.clipboardData)?.getData('text');
+    if (!paste) return;
+    const clean = paste.replace(/\D/g, '').slice(0, 6);
+    if (clean) {
+      onChange(clean);
+      const targetIndex = Math.min(clean.length, 5);
+      inputRefs.current[targetIndex]?.focus();
+    }
+  };
+
   return (
-    <div style={{ display: 'flex', gap: '8px', justifyContent: 'center' }}>
+    <div style={{ display: 'flex', gap: '8px', justifyContent: 'center' }} onPaste={handlePaste}>
       {digits.map((d, i) => (
         <input
           key={i}
@@ -132,7 +144,7 @@ function OtpBoxes({ value, onChange, disabled }) {
 }
 
 // ─── Resend countdown button ─────────────────────────────────────────────────
-function ResendButton({ onResend, cooldown, setCooldown }) {
+function ResendButton({ onResend, cooldown, setCooldown, loading }) {
   useEffect(() => {
     if (cooldown <= 0) return;
     const t = setInterval(() => setCooldown(c => Math.max(0, c - 1)), 1000);
@@ -148,14 +160,18 @@ function ResendButton({ onResend, cooldown, setCooldown }) {
         : <button
             type="button"
             onClick={onResend}
+            disabled={loading}
             style={{
               display: 'inline-flex', alignItems: 'center', gap: '5px',
-              background: 'none', border: 'none', cursor: 'pointer',
-              color: 'var(--accent-green)', fontSize: '0.85rem', fontWeight: '700',
+              background: 'none', border: 'none', cursor: loading ? 'not-allowed' : 'pointer',
+              color: loading ? 'var(--text-muted)' : 'var(--accent-green)',
+              fontSize: '0.85rem', fontWeight: '700',
               fontFamily: "'Plus Jakarta Sans', system-ui, sans-serif",
+              opacity: loading ? 0.6 : 1,
             }}
           >
-            <RefreshCw size={14} /> Resend Code
+            <RefreshCw size={14} style={{ animation: loading ? 'spin 1s linear infinite' : 'none' }} />
+            {loading ? 'Resending code…' : 'Resend Code'}
           </button>
       }
     </div>
@@ -235,6 +251,7 @@ export function LoginPage({ onLoginSuccess, onBack, theme = 'green' }) {
   const [regOtp, setRegOtp]           = useState('');
   const [regOtpCooldown, setRegOtpCooldown] = useState(0);
   const [regOtpLoading, setRegOtpLoading]   = useState(false);
+  const [regResendLoading, setRegResendLoading] = useState(false);
   // Store pending new user until OTP is verified
   const [pendingRegUser, setPendingRegUser] = useState(null);
 
@@ -250,6 +267,8 @@ export function LoginPage({ onLoginSuccess, onBack, theme = 'green' }) {
   const [forgotOtp, setForgotOtp]         = useState('');
   const [forgotOtpCooldown, setForgotOtpCooldown] = useState(0);
   const [forgotOtpLoading, setForgotOtpLoading]   = useState(false);
+  const [forgotResendLoading, setForgotResendLoading] = useState(false);
+  const [forgotResetToken, setForgotResetToken]   = useState('');
 
   // Derived
   const pwdStrength = regPwd.length === 0 ? null : regPwd.length < 8 ? 'weak' : 'ok';
@@ -458,6 +477,7 @@ export function LoginPage({ onLoginSuccess, onBack, theme = 'green' }) {
       setRegOtpCooldown(60);
       setRegStep('otp');
       setRegOtp('');
+      setRegErr('');
       setRegSuccess(`Verification code sent to ${email}. (Verification code: ${verificationCode})`);
     } catch (err) {
       setRegErr(err.message || 'Failed to create account. Please try again.');
@@ -539,8 +559,10 @@ export function LoginPage({ onLoginSuccess, onBack, theme = 'green' }) {
   };
 
   const handleRegResendOtp = async () => {
+    if (regResendLoading || regOtpCooldown > 0) return;
     setRegErr('');
     setRegSuccess('');
+    setRegResendLoading(true);
     try {
       if (pendingRegUser?.supabaseMode) {
         try {
@@ -559,7 +581,12 @@ export function LoginPage({ onLoginSuccess, onBack, theme = 'green' }) {
       setRegOtp('');
       setRegSuccess(`A new verification code has been sent to ${pendingRegUser?.email}. (Verification code: ${newCode})`);
     } catch (err) {
+      if (err.cooldownRemaining) {
+        setRegOtpCooldown(err.cooldownRemaining);
+      }
       setRegErr(err.message || 'Could not resend code. Please wait and try again.');
+    } finally {
+      setRegResendLoading(false);
     }
   };
 
@@ -577,7 +604,8 @@ export function LoginPage({ onLoginSuccess, onBack, theme = 'green' }) {
       setForgotOtpCooldown(result.cooldown || 60);
       setForgotOtp('');
       setForgotStep('otp');
-      setForgotSuccess(`Verification code sent to ${email}.`);
+      // Do not reveal whether arbitrary email belongs to an existing account
+      setForgotSuccess(`If an account is associated with ${email}, a verification code has been sent.`);
     } catch (err) {
       setForgotErr(err.message || 'Failed to send verification code. Please try again.');
     } finally {
@@ -605,15 +633,22 @@ export function LoginPage({ onLoginSuccess, onBack, theme = 'green' }) {
   };
 
   const handleForgotResendOtp = async () => {
+    if (forgotResendLoading || forgotOtpCooldown > 0) return;
     setForgotErr('');
     setForgotSuccess('');
+    setForgotResendLoading(true);
     try {
       const result = await sendPasswordRecoveryOtp(forgotEmail.trim());
       setForgotOtpCooldown(result.cooldown || 60);
       setForgotOtp('');
-      setForgotSuccess('A new verification code has been sent.');
+      setForgotSuccess(result.message || 'A new verification code has been sent to your email.');
     } catch (err) {
+      if (err.cooldownRemaining) {
+        setForgotOtpCooldown(err.cooldownRemaining);
+      }
       setForgotErr(err.message || 'Could not resend code. Please wait and try again.');
+    } finally {
+      setForgotResendLoading(false);
     }
   };
 
@@ -1058,6 +1093,7 @@ MODE: REGISTER — Step 2: OTP verification
                   onResend={handleRegResendOtp}
                   cooldown={regOtpCooldown}
                   setCooldown={setRegOtpCooldown}
+                  loading={regResendLoading}
                 />
               </form>
             </>
@@ -1158,6 +1194,7 @@ MODE: REGISTER — Step 2: OTP verification
                   onResend={handleForgotResendOtp}
                   cooldown={forgotOtpCooldown}
                   setCooldown={setForgotOtpCooldown}
+                  loading={forgotResendLoading}
                 />
               </form>
             </>

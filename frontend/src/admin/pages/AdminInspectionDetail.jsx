@@ -20,6 +20,7 @@ export function AdminInspectionDetail() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [copiedToast, setCopiedToast] = useState(false);
+  const [viewMode, setViewMode] = useState('annotated'); // 'annotated' | 'original'
 
   const loadDetail = async () => {
     setLoading(true);
@@ -158,22 +159,81 @@ Auditor: ${inspection.inspector_name || 'Rajesh Kumar'}`;
       >
         {/* Left Column: Live Fabric Defect Annotation */}
         <div className="admin-card" style={{ padding: '24px' }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '18px' }}>
-            <h3 style={{ fontSize: '16px', fontWeight: '800', color: '#1f2a44', margin: 0 }}>
-              Live Fabric Defect Annotation
-            </h3>
-            <span
-              style={{
-                fontSize: '11.5px',
-                fontWeight: '700',
-                padding: '4px 12px',
-                borderRadius: '20px',
-                backgroundColor: '#fef3c7',
-                color: '#d97706',
-              }}
-            >
-              {inspection.defect_count || 3} Detected Anomaly Regions
-            </span>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '18px', flexWrap: 'wrap', gap: '10px' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '14px', flexWrap: 'wrap' }}>
+              <h3 style={{ fontSize: '16px', fontWeight: '800', color: '#1f2a44', margin: 0 }}>
+                Fabric Sample Viewport
+              </h3>
+
+              {/* Dual View Toggle: Annotated vs Original */}
+              <div style={{ display: 'inline-flex', backgroundColor: '#f1f5f9', borderRadius: '8px', padding: '3px' }}>
+                <button
+                  type="button"
+                  onClick={() => setViewMode('annotated')}
+                  style={{
+                    border: 'none',
+                    borderRadius: '6px',
+                    padding: '5px 12px',
+                    fontSize: '12px',
+                    fontWeight: '700',
+                    cursor: 'pointer',
+                    backgroundColor: viewMode === 'annotated' ? '#16806e' : 'transparent',
+                    color: viewMode === 'annotated' ? '#ffffff' : '#64748b',
+                    boxShadow: viewMode === 'annotated' ? '0 1px 3px rgba(0,0,0,0.1)' : 'none',
+                    transition: 'all 0.15s ease',
+                  }}
+                >
+                  🏷️ YOLOv8 Annotated
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setViewMode('original')}
+                  style={{
+                    border: 'none',
+                    borderRadius: '6px',
+                    padding: '5px 12px',
+                    fontSize: '12px',
+                    fontWeight: '700',
+                    cursor: 'pointer',
+                    backgroundColor: viewMode === 'original' ? '#16806e' : 'transparent',
+                    color: viewMode === 'original' ? '#ffffff' : '#64748b',
+                    boxShadow: viewMode === 'original' ? '0 1px 3px rgba(0,0,0,0.1)' : 'none',
+                    transition: 'all 0.15s ease',
+                  }}
+                >
+                  🖼️ Original Image
+                </button>
+              </div>
+            </div>
+
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+              {inspection.metadata?.storage_bucket && (
+                <span
+                  style={{
+                    fontSize: '11px',
+                    fontWeight: '600',
+                    padding: '3px 8px',
+                    borderRadius: '6px',
+                    backgroundColor: '#e0f2fe',
+                    color: '#0369a1',
+                  }}
+                >
+                  ☁️ {inspection.metadata.storage_bucket}
+                </span>
+              )}
+              <span
+                style={{
+                  fontSize: '11.5px',
+                  fontWeight: '700',
+                  padding: '4px 12px',
+                  borderRadius: '20px',
+                  backgroundColor: '#fef3c7',
+                  color: '#d97706',
+                }}
+              >
+                {inspection.defect_count || 0} Detected Anomaly Regions
+              </span>
+            </div>
           </div>
 
           {/* Fabric Viewport with Bounding Boxes */}
@@ -203,106 +263,119 @@ Auditor: ${inspection.inspector_name || 'Rajesh Kumar'}`;
               />
             ) : (
               <img
-                src={inspection.image_path?.startsWith('/uploads') ? inspection.image_path : defaultFabricImage}
+                src={(() => {
+                  const rawImg = inspection.image_path || inspection.image_url;
+                  if (!rawImg) return defaultFabricImage;
+                  if (rawImg.startsWith('http') || rawImg.startsWith('/api') || rawImg.startsWith('/uploads') || rawImg.startsWith('data:')) {
+                    return rawImg;
+                  }
+                  return `/api/storage/fabric-images/${rawImg.replace(/^fabric-images\//, '')}`;
+                })()}
                 alt="Fabric Scan"
                 style={{ width: '100%', height: '100%', objectFit: 'cover' }}
+                onError={(e) => {
+                  e.target.onerror = null;
+                  e.target.src = defaultFabricImage;
+                }}
               />
             )}
 
-            {/* Overlaid Bounding Boxes (Matching Screenshot 3) */}
-            {isIns0047 ? (
-              <>
-                {/* Red Bounding Box: Weft Tear */}
-                <div
-                  style={{
-                    position: 'absolute',
-                    top: '25%',
-                    left: '26%',
-                    width: '28%',
-                    height: '32%',
-                    border: '2px solid #ef4444',
-                    pointerEvents: 'none',
-                  }}
-                >
+            {/* Overlaid Bounding Boxes (Controlled by View Mode Toggle) */}
+            {viewMode === 'annotated' && (
+              isIns0047 ? (
+                <>
+                  {/* Red Bounding Box: Weft Tear */}
                   <div
                     style={{
                       position: 'absolute',
-                      top: '-24px',
-                      left: '0',
-                      backgroundColor: '#ef4444',
-                      color: '#ffffff',
-                      fontSize: '11px',
-                      fontWeight: '700',
-                      padding: '2px 8px',
-                      borderRadius: '4px',
-                      whiteSpace: 'nowrap',
+                      top: '25%',
+                      left: '26%',
+                      width: '28%',
+                      height: '32%',
+                      border: '2px solid #ef4444',
+                      pointerEvents: 'none',
                     }}
                   >
-                    Weft Tear (94% Conf.)
+                    <div
+                      style={{
+                        position: 'absolute',
+                        top: '-24px',
+                        left: '0',
+                        backgroundColor: '#ef4444',
+                        color: '#ffffff',
+                        fontSize: '11px',
+                        fontWeight: '700',
+                        padding: '2px 8px',
+                        borderRadius: '4px',
+                        whiteSpace: 'nowrap',
+                      }}
+                    >
+                      Weft Tear (94% Conf.)
+                    </div>
                   </div>
-                </div>
 
-                {/* Amber Bounding Box: Slub Knot */}
-                <div
-                  style={{
-                    position: 'absolute',
-                    top: '52%',
-                    left: '52%',
-                    width: '22%',
-                    height: '28%',
-                    border: '2px solid #ea580c',
-                    pointerEvents: 'none',
-                  }}
-                >
+                  {/* Amber Bounding Box: Slub Knot */}
                   <div
                     style={{
                       position: 'absolute',
-                      top: '-24px',
-                      left: '0',
-                      backgroundColor: '#ea580c',
-                      color: '#ffffff',
-                      fontSize: '11px',
-                      fontWeight: '700',
-                      padding: '2px 8px',
-                      borderRadius: '4px',
-                      whiteSpace: 'nowrap',
+                      top: '52%',
+                      left: '52%',
+                      width: '22%',
+                      height: '28%',
+                      border: '2px solid #ea580c',
+                      pointerEvents: 'none',
                     }}
                   >
-                    Slub Knot (81% Conf.)
+                    <div
+                      style={{
+                        position: 'absolute',
+                        top: '-24px',
+                        left: '0',
+                        backgroundColor: '#ea580c',
+                        color: '#ffffff',
+                        fontSize: '11px',
+                        fontWeight: '700',
+                        padding: '2px 8px',
+                        borderRadius: '4px',
+                        whiteSpace: 'nowrap',
+                      }}
+                    >
+                      Slub Knot (81% Conf.)
+                    </div>
                   </div>
-                </div>
-              </>
-            ) : (
-              (inspection.defects || []).map((d, index) => (
-                <div
-                  key={index}
-                  style={{
-                    position: 'absolute',
-                    top: `${d.y}%`,
-                    left: `${d.x}%`,
-                    width: `${d.width}%`,
-                    height: `${d.height}%`,
-                    border: `2px solid ${d.severity === 'Critical' ? '#ef4444' : '#ea580c'}`,
-                  }}
-                >
+                </>
+              ) : (
+                (inspection.defects || []).map((d, index) => (
                   <div
+                    key={index}
                     style={{
                       position: 'absolute',
-                      top: '-22px',
-                      left: '0',
-                      backgroundColor: d.severity === 'Critical' ? '#ef4444' : '#ea580c',
-                      color: '#ffffff',
-                      fontSize: '10.5px',
-                      fontWeight: '700',
-                      padding: '1px 6px',
-                      borderRadius: '4px',
-                      whiteSpace: 'nowrap',
+                      top: `${d.y}%`,
+                      left: `${d.x}%`,
+                      width: `${d.width}%`,
+                      height: `${d.height}%`,
+                      border: `2px solid ${d.severity === 'Critical' ? '#ef4444' : '#ea580c'}`,
                     }}
                   >
-                    {d.defect_type} ({Math.round(d.confidence || 85)}% Conf.)
+                    <div
+                      style={{
+                        position: 'absolute',
+                        top: '-22px',
+                        left: '0',
+                        backgroundColor: d.severity === 'Critical' ? '#ef4444' : '#ea580c',
+                        color: '#ffffff',
+                        fontSize: '10.5px',
+                        fontWeight: '700',
+                        padding: '1px 6px',
+                        borderRadius: '4px',
+                        whiteSpace: 'nowrap',
+                      }}
+                    >
+                      {d.defect_type} ({Math.round(d.confidence || 85)}% Conf.)
+                    </div>
                   </div>
-                </div>
-              ))
+                ))
+              )
             )}
           </div>
 

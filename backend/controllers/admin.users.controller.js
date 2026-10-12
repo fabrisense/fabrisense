@@ -1,18 +1,10 @@
 import bcrypt from 'bcryptjs';
 import db from '../database/db.js';
 
-const demoStats = {
-  'aarav.sharma@petrosoft.in': { count: 348, last_active_text: '5 min ago', avatar: 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=100&h=100&fit=crop&crop=faces' },
-  'priya.patel@petrosoft.in': { count: 1102, last_active_text: 'Just now', avatar: 'https://images.unsplash.com/photo-1573496359142-b8d87734a5a2?w=100&h=100&fit=crop&crop=faces' },
-  'amit.kumar@petrosoft.in': { count: 524, last_active_text: '2 hours ago', avatar: 'https://images.unsplash.com/photo-1500648767791-00dcc994a43e?w=100&h=100&fit=crop&crop=faces' },
-  'kiran.rao@petrosoft.in': { count: 112, last_active_text: 'Yesterday', avatar: 'https://images.unsplash.com/photo-1580489944761-15a19d654956?w=100&h=100&fit=crop&crop=faces' },
-  'vikram.m@petrosoft.in': { count: 89, last_active_text: '3 days ago', avatar: 'https://images.unsplash.com/photo-1472099645785-5658abf4ff4e?w=100&h=100&fit=crop&crop=faces' },
-  'sunita.reddy@petrosoft.in': { count: 431, last_active_text: '10 mins ago', avatar: 'https://images.unsplash.com/photo-1544005313-94ddf0286df2?w=100&h=100&fit=crop&crop=faces' },
-};
-
 function formatRelativeTime(dateStr) {
   try {
     const diffMs = Date.now() - new Date(dateStr).getTime();
+    if (isNaN(diffMs)) return 'Recently';
     const diffMins = Math.floor(diffMs / (1000 * 60));
     if (diffMins < 2) return 'Just now';
     if (diffMins < 60) return `${diffMins} min ago`;
@@ -72,29 +64,17 @@ export function getUsers(req, res) {
       LEFT JOIN inspections i ON u.id = i.user_id
       WHERE ${whereClause}
       GROUP BY u.id
-      ORDER BY 
-        CASE LOWER(u.email)
-          WHEN 'aarav.sharma@petrosoft.in' THEN 1
-          WHEN 'priya.patel@petrosoft.in' THEN 2
-          WHEN 'amit.kumar@petrosoft.in' THEN 3
-          WHEN 'kiran.rao@petrosoft.in' THEN 4
-          WHEN 'vikram.m@petrosoft.in' THEN 5
-          WHEN 'sunita.reddy@petrosoft.in' THEN 6
-          ELSE 7
-        END,
-        u.id ASC
+      ORDER BY u.id ASC
     `;
 
     const users = db.prepare(sql).all(...params);
 
     const enrichedUsers = users.map(u => {
-      const emailLower = (u.email || '').toLowerCase();
-      const demo = demoStats[emailLower];
       return {
         ...u,
-        inspection_count: demo ? demo.count : (u.inspection_count || 0),
-        last_active_text: demo ? demo.last_active_text : (u.last_active ? formatRelativeTime(u.last_active) : 'Never'),
-        avatar_url: demo ? demo.avatar : null,
+        inspection_count: u.inspection_count || 0,
+        last_active_text: u.last_active ? formatRelativeTime(u.last_active) : 'Never',
+        avatar_url: u.avatar_url || null,
       };
     });
 

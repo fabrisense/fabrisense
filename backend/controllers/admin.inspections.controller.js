@@ -120,22 +120,31 @@ export async function createInspection(req, res) {
     } = req.body;
 
     let imagePath = '/assets/indigo_denim.jpg';
+    let imageMetadata = null;
 
     // If an image was uploaded via Multer
     if (req.file) {
       imagePath = `/uploads/inspections/${path.basename(req.file.path)}`;
 
-      // Upload to Supabase Storage bucket 'inspection-images' if configured
+      // Upload to private Supabase Storage bucket 'fabric-images' if configured
       if (isSupabaseConfigured()) {
         try {
           const fileBuffer = fs.readFileSync(req.file.path);
-          const cloudUrl = await uploadToSupabaseStorage(
+          const cloudResult = await uploadToSupabaseStorage(
             fileBuffer,
             path.basename(req.file.path),
             req.file.mimetype || 'image/jpeg'
           );
-          if (cloudUrl) {
-            imagePath = cloudUrl;
+          if (cloudResult) {
+            imagePath = cloudResult.proxyUrl || cloudResult.signedUrl || cloudResult.url;
+            imageMetadata = {
+              storage_bucket: cloudResult.bucket,
+              storage_path: cloudResult.storagePath,
+              signed_url: cloudResult.signedUrl,
+              proxy_url: cloudResult.proxyUrl,
+              mime_type: cloudResult.mimeType,
+              size_bytes: cloudResult.sizeBytes,
+            };
           }
         } catch (uploadErr) {
           console.warn('[Storage Warning] Cloud upload failed, using local path:', uploadErr.message);
@@ -165,6 +174,7 @@ export async function createInspection(req, res) {
       recommendedAction: aiResult.recommendedAction,
       modelVersion: aiResult.modelVersion || 'FabriSense YOLOv8',
       defects: aiResult.defects,
+      metadata: imageMetadata,
     });
 
     const created = await DatabaseService.getInspectionById(inspectionId);

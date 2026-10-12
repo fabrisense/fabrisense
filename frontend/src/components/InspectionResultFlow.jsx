@@ -83,6 +83,7 @@ export function InspectionResultFlow({
   const [isFormatsModalOpen, setIsFormatsModalOpen] = useState(false);
   const [copiedToast, setCopiedToast] = useState(false);
   const [savedSuccess, setSavedSuccess] = useState(false);
+  const [viewMode, setViewMode] = useState('annotated'); // 'annotated' | 'original'
 
   const displayImage = capturedImage || defaultFabricImage;
 

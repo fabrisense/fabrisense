@@ -11,15 +11,16 @@ import {
   AlertCircle
 } from 'lucide-react';
 import jsPDF from 'jspdf';
-import { fetchReports } from '../../services/adminApi';
+import { fetchReports, fetchUsers } from '../../services/adminApi';
 
 export function AdminReports() {
   const [reports, setReports] = useState([]);
+  const [usersList, setUsersList] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [copiedId, setCopiedId] = useState(null);
 
-  // Filters matching Screenshot 2
+  // Filters
   const [reportSearch, setReportSearch] = useState('');
   const [dateRange, setDateRange] = useState('30d');
   const [gradeFilter, setGradeFilter] = useState('all');
@@ -28,8 +29,14 @@ export function AdminReports() {
 
   // Generate Report Modal
   const [isGenerateModalOpen, setIsGenerateModalOpen] = useState(false);
-  const [genInspectionId, setGenInspectionId] = useState('INS-0498');
+  const [genInspectionId, setGenInspectionId] = useState('');
   const [genFormat, setGenFormat] = useState('PDF Summary');
+
+  useEffect(() => {
+    fetchUsers().then((res) => {
+      if (res.success && res.data) setUsersList(res.data);
+    }).catch(() => {});
+  }, []);
 
   const loadReports = async () => {
     setLoading(true);
@@ -266,11 +273,11 @@ export function AdminReports() {
               }}
             >
               <option value="all">User: All Users</option>
-              <option value="Rajesh Kumar">User: Rajesh Kumar</option>
-              <option value="Anil Mehta">User: Anil Mehta</option>
-              <option value="Meera Sen">User: Meera Sen</option>
-              <option value="Aarav Sharma">User: Aarav Sharma</option>
-              <option value="Priya Patel">User: Priya Patel</option>
+              {usersList.map((u) => (
+                <option key={u.id} value={u.name}>
+                  User: {u.name}
+                </option>
+              ))}
             </select>
           </div>
 
@@ -570,7 +577,7 @@ export function AdminReports() {
                 type="text"
                 value={genInspectionId}
                 onChange={(e) => setGenInspectionId(e.target.value)}
-                placeholder="e.g. INS-0498"
+                placeholder="e.g. INS-2026-0001"
                 className="admin-form-input"
               />
             </div>
@@ -599,14 +606,16 @@ export function AdminReports() {
               <button
                 type="button"
                 onClick={() => {
-                  const sample = reports[0] || {
-                    report_number: `REP-2026-${Math.floor(100 + Math.random() * 900)}`,
-                    inspection_id: genInspectionId,
-                    grade: 'A',
+                  const targetId = genInspectionId.trim() || reports[0]?.inspection_id || 'INS-0001';
+                  const match = reports.find((r) => r.inspection_id === targetId) || reports[0];
+                  const reportToPrint = match || {
+                    report_number: `REP-${targetId}`,
+                    inspection_id: targetId,
+                    grade: 'B',
                     defect_count: 0,
                     status: 'Passed',
                   };
-                  handleDownloadPDF({ ...sample, inspection_id: genInspectionId });
+                  handleDownloadPDF({ ...reportToPrint, inspection_id: targetId });
                   setIsGenerateModalOpen(false);
                 }}
                 className="btn-teal"

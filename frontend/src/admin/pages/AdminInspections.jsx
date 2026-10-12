@@ -17,7 +17,7 @@ export function AdminInspections() {
 
   // State
   const [inspections, setInspections] = useState([]);
-  const [pagination, setPagination] = useState({ page: 1, limit: 8, total: 1247, totalPages: 156 });
+  const [pagination, setPagination] = useState({ page: 1, limit: 8, total: 0, totalPages: 1 });
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
 
@@ -74,14 +74,22 @@ export function AdminInspections() {
     loadInspections();
   }, [search, grade, status, userId, page]);
 
-  // Realtime subscription for live inspection stream
+  // Realtime subscription + 10s polling fallback for live inspection stream
   useEffect(() => {
+    const pollInterval = setInterval(() => {
+      loadInspections(true);
+    }, 10000);
+
     const unsub = subscribeToInspections(() => {
       console.log('[Realtime] Inspection list change detected, reloading...');
       loadInspections(true);
     });
-    return () => unsub();
-  }, []);
+
+    return () => {
+      clearInterval(pollInterval);
+      unsub();
+    };
+  }, [search, grade, status, userId, page]);
 
   const handleCreateSubmit = async (e) => {
     e.preventDefault();

@@ -69,6 +69,7 @@ async function apiFetch(path, options = {}) {
     throw {
       message: data?.error || `Request failed (HTTP ${res.status})`,
       status: res.status,
+      code: data?.code,
       cooldownRemaining: data?.cooldownRemaining,
     };
   }

@@ -47,24 +47,32 @@ export function AdminDefects() {
 
   const {
     kpis,
-    occurrencesByType = [
-      { type: 'Holes', count: 167, color: '#dc2626' },
-      { type: 'Stains', count: 146, color: '#ea580c' },
-      { type: 'Knots', count: 115, color: '#16806e' },
-      { type: 'Tears', count: 62, color: '#2563eb' },
-      { type: 'Other', count: 33, color: '#94a3b8' },
-    ],
-    severityClassification = [
-      { severity: 'High / Critical', percentage: '38%', color: '#dc2626' },
-      { severity: 'Moderate', percentage: '44%', color: '#ea580c' },
-      { severity: 'Minor anomalies', percentage: '18%', color: '#16806e' },
-    ],
+    occurrencesByType = [],
+    severityClassification = [],
     categoryDetails = [],
   } = data || {};
 
+  const totalAnomaliesCount = kpis?.totalAnomalies || 0;
+  const maxOccurrences = Math.max(...(occurrencesByType || []).map((item) => item.count || 0), 1);
+
+  // Dynamic SVG donut segments for severity
+  let sevAccPct = 0;
+  const severitySlices = (severityClassification || [])
+    .map((s) => {
+      const pct = parseFloat(String(s.percentage || '0').replace('%', '')) || 0;
+      const start = sevAccPct;
+      sevAccPct += pct;
+      return {
+        ...s,
+        pct,
+        startAngle: (start / 100) * 360,
+      };
+    })
+    .filter((s) => s.pct > 0);
+
   return (
     <div style={{ maxWidth: '1440px', margin: '0 auto' }}>
-      {/* ── TOP 4 KPI CARDS (Matches Screenshot 4) ── */}
+      {/* ── TOP 4 KPI CARDS ── */}
       <div
         style={{
           display: 'grid',
@@ -79,10 +87,10 @@ export function AdminDefects() {
             TOTAL ANOMALY INSTANCES
           </div>
           <div style={{ fontSize: '32px', fontWeight: '800', color: '#1f2a44', margin: '6px 0 2px' }}>
-            {kpis?.totalAnomalies ? kpis.totalAnomalies.toLocaleString() : '523'}
+            {totalAnomaliesCount.toLocaleString()}
           </div>
           <div style={{ fontSize: '12px', color: '#64748b' }}>
-            Across 1,247 inspected batches
+            {kpis?.totalInspections ? `Across ${kpis.totalInspections.toLocaleString()} inspected batches` : 'No inspection records yet'}
           </div>
         </div>
 
@@ -92,10 +100,10 @@ export function AdminDefects() {
             CLASSIFICATION CATEGORIES
           </div>
           <div style={{ fontSize: '32px', fontWeight: '800', color: '#1f2a44', margin: '6px 0 2px' }}>
-            {kpis?.classificationCategories || '5'}
+            {kpis?.classificationCategories ?? occurrencesByType.length}
           </div>
           <div style={{ fontSize: '12px', color: '#64748b' }}>
-            Holes, Stains, Knots, Tears, Other
+            {occurrencesByType.length > 0 ? occurrencesByType.map((o) => o.type).slice(0, 5).join(', ') : 'No categories recorded'}
           </div>
         </div>
 
@@ -105,10 +113,10 @@ export function AdminDefects() {
             PRIMARY CONTRIBUTOR
           </div>
           <div style={{ fontSize: '32px', fontWeight: '800', color: '#1f2a44', margin: '6px 0 2px' }}>
-            {kpis?.primaryContributor || 'Holes'}
+            {kpis?.primaryContributor || 'None'}
           </div>
           <div style={{ fontSize: '12px', color: '#64748b' }}>
-            {kpis?.primaryContributorSub || '32% of all defect occurrences'}
+            {kpis?.primaryContributorSub || '0% of all occurrences'}
           </div>
         </div>
 
@@ -118,15 +126,15 @@ export function AdminDefects() {
             AVERAGE SEVERITY INDEX
           </div>
           <div style={{ fontSize: '32px', fontWeight: '800', color: '#1f2a44', margin: '6px 0 2px' }}>
-            {kpis?.averageSeverity || 'Moderate'}
+            {kpis?.averageSeverity || 'None'}
           </div>
           <div style={{ fontSize: '12px', color: '#64748b' }}>
-            {kpis?.averageSeveritySub || 'Avg confidence of 84.3%'}
+            {kpis?.averageSeveritySub || 'No severity recorded'}
           </div>
         </div>
       </div>
 
-      {/* ── ROW 2: CHARTS (Matches Screenshot 4) ── */}
+      {/* ── ROW 2: CHARTS ── */}
       <div
         style={{
           display: 'grid',
@@ -141,49 +149,55 @@ export function AdminDefects() {
             Occurrences by Defect Type
           </div>
 
-          <div
-            style={{
-              height: '190px',
-              display: 'flex',
-              alignItems: 'flex-end',
-              justifyContent: 'space-around',
-              padding: '0 20px',
-            }}
-          >
-            {occurrencesByType.map((item, idx) => {
-              const max = 170;
-              const heightPct = Math.round((item.count / max) * 100);
+          {occurrencesByType.length === 0 ? (
+            <div style={{ height: '190px', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#94a3b8', fontSize: '13px' }}>
+              No defect occurrences recorded yet.
+            </div>
+          ) : (
+            <div
+              style={{
+                height: '190px',
+                display: 'flex',
+                alignItems: 'flex-end',
+                justifyContent: 'space-around',
+                padding: '0 20px',
+              }}
+            >
+              {occurrencesByType.map((item, idx) => {
+                const heightPct = Math.max(Math.round(((item.count || 0) / maxOccurrences) * 100), 5);
 
-              return (
-                <div
-                  key={idx}
-                  style={{
-                    display: 'flex',
-                    flexDirection: 'column',
-                    alignItems: 'center',
-                    gap: '8px',
-                    height: '100%',
-                    justifyContent: 'flex-end',
-                  }}
-                >
+                return (
                   <div
+                    key={idx}
                     style={{
-                      width: '24px',
-                      height: `${heightPct}%`,
-                      backgroundColor: item.color,
-                      borderRadius: '5px 5px 0 0',
+                      display: 'flex',
+                      flexDirection: 'column',
+                      alignItems: 'center',
+                      gap: '8px',
+                      height: '100%',
+                      justifyContent: 'flex-end',
                     }}
-                  />
-                  <div style={{ textAlign: 'center' }}>
-                    <div style={{ fontSize: '12px', fontWeight: '700', color: '#1f2a44' }}>
-                      {item.type}
+                  >
+                    <div
+                      style={{
+                        width: '28px',
+                        height: `${heightPct}%`,
+                        backgroundColor: item.color,
+                        borderRadius: '5px 5px 0 0',
+                        transition: 'height 0.3s ease',
+                      }}
+                    />
+                    <div style={{ textAlign: 'center' }}>
+                      <div style={{ fontSize: '12px', fontWeight: '700', color: '#1f2a44' }}>
+                        {item.type}
+                      </div>
+                      <div style={{ fontSize: '11px', color: '#64748b' }}>{item.count}</div>
                     </div>
-                    <div style={{ fontSize: '11px', color: '#64748b' }}>{item.count}</div>
                   </div>
-                </div>
-              );
-            })}
-          </div>
+                );
+              })}
+            </div>
+          )}
         </div>
 
         {/* Defect Severity Classification (Donut Chart) */}
@@ -196,51 +210,52 @@ export function AdminDefects() {
             {/* Donut Graphic */}
             <div style={{ position: 'relative', width: '150px', height: '150px' }}>
               <svg viewBox="0 0 100 100" style={{ transform: 'rotate(-90deg)', width: '100%', height: '100%' }}>
-                {/* 38% High/Critical (Red) */}
-                <circle
-                  cx="50"
-                  cy="50"
-                  r="40"
-                  fill="transparent"
-                  stroke="#dc2626"
-                  strokeWidth="16"
-                  strokeDasharray="95.5 251.2"
-                  strokeDashoffset="0"
-                />
-                {/* 44% Moderate (Amber) */}
-                <circle
-                  cx="50"
-                  cy="50"
-                  r="40"
-                  fill="transparent"
-                  stroke="#ea580c"
-                  strokeWidth="16"
-                  strokeDasharray="110.5 251.2"
-                  strokeDashoffset="-95.5"
-                />
-                {/* 18% Minor (Teal) */}
-                <circle
-                  cx="50"
-                  cy="50"
-                  r="40"
-                  fill="transparent"
-                  stroke="#16806e"
-                  strokeWidth="16"
-                  strokeDasharray="45.2 251.2"
-                  strokeDashoffset="-206"
-                />
+                {severitySlices.length === 0 ? (
+                  <circle
+                    cx="50"
+                    cy="50"
+                    r="40"
+                    fill="transparent"
+                    stroke="#e2e8f0"
+                    strokeWidth="16"
+                  />
+                ) : (
+                  severitySlices.map((s, idx) => {
+                    const strokeDasharray = `${(s.pct / 100) * 251.2} 251.2`;
+                    const strokeDashoffset = -((s.startAngle / 360) * 251.2);
+                    return (
+                      <circle
+                        key={idx}
+                        cx="50"
+                        cy="50"
+                        r="40"
+                        fill="transparent"
+                        stroke={s.color}
+                        strokeWidth="16"
+                        strokeDasharray={strokeDasharray}
+                        strokeDashoffset={strokeDashoffset}
+                      />
+                    );
+                  })
+                )}
               </svg>
             </div>
 
-            {/* Legend list matching Screenshot 4 */}
+            {/* Dynamic Legend list */}
             <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
-              {severityClassification.map((s, idx) => (
-                <div key={idx} style={{ display: 'flex', alignItems: 'center', gap: '10px', fontSize: '13px' }}>
-                  <span style={{ width: '10px', height: '10px', borderRadius: '2px', backgroundColor: s.color }} />
-                  <span style={{ color: '#334155', minWidth: '130px' }}>{s.severity}</span>
-                  <strong style={{ color: '#1f2a44' }}>{s.percentage}</strong>
+              {severityClassification.length === 0 ? (
+                <div style={{ fontSize: '13px', color: '#94a3b8' }}>
+                  No severity data recorded
                 </div>
-              ))}
+              ) : (
+                severityClassification.map((s, idx) => (
+                  <div key={idx} style={{ display: 'flex', alignItems: 'center', gap: '10px', fontSize: '13px' }}>
+                    <span style={{ width: '10px', height: '10px', borderRadius: '2px', backgroundColor: s.color }} />
+                    <span style={{ color: '#334155', minWidth: '130px' }}>{s.severity}</span>
+                    <strong style={{ color: '#1f2a44' }}>{s.percentage}</strong>
+                  </div>
+                ))
+              )}
             </div>
           </div>
         </div>
@@ -265,35 +280,43 @@ export function AdminDefects() {
             </tr>
           </thead>
           <tbody>
-            {categoryDetails.map((cat, idx) => (
-              <tr key={idx} style={{ borderBottom: '1px solid #f1f5f9' }}>
-                <td style={{ padding: '16px 24px', fontWeight: '700', color: '#1f2a44' }}>
-                  {cat.category}
-                </td>
-                <td style={{ padding: '16px 20px', color: '#334155' }}>
-                  {cat.occurrences}
-                </td>
-                <td style={{ padding: '16px 20px', color: '#334155' }}>
-                  {cat.shareRate}
-                </td>
-                <td style={{ padding: '16px 20px', color: '#334155' }}>
-                  {cat.commonFabricType}
-                </td>
-                <td style={{ padding: '16px 24px' }}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px', color: '#334155', fontWeight: '500' }}>
-                    <span
-                      style={{
-                        width: '7px',
-                        height: '7px',
-                        borderRadius: '50%',
-                        backgroundColor: cat.impactColor || '#dc2626',
-                      }}
-                    />
-                    <span>{cat.qualityImpact}</span>
-                  </div>
+            {categoryDetails.length === 0 ? (
+              <tr>
+                <td colSpan="5" style={{ textAlign: 'center', padding: '32px 16px', color: '#94a3b8' }}>
+                  No defect categories recorded.
                 </td>
               </tr>
-            ))}
+            ) : (
+              categoryDetails.map((cat, idx) => (
+                <tr key={idx} style={{ borderBottom: '1px solid #f1f5f9' }}>
+                  <td style={{ padding: '16px 24px', fontWeight: '700', color: '#1f2a44' }}>
+                    {cat.category}
+                  </td>
+                  <td style={{ padding: '16px 20px', color: '#334155' }}>
+                    {cat.occurrences}
+                  </td>
+                  <td style={{ padding: '16px 20px', color: '#334155' }}>
+                    {cat.shareRate}
+                  </td>
+                  <td style={{ padding: '16px 20px', color: '#334155' }}>
+                    {cat.commonFabricType || 'General Weave'}
+                  </td>
+                  <td style={{ padding: '16px 24px' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px', color: '#334155', fontWeight: '500' }}>
+                      <span
+                        style={{
+                          width: '7px',
+                          height: '7px',
+                          borderRadius: '50%',
+                          backgroundColor: cat.impactColor || '#dc2626',
+                        }}
+                      />
+                      <span>{cat.qualityImpact}</span>
+                    </div>
+                  </td>
+                </tr>
+              ))
+            )}
           </tbody>
         </table>
       </div>

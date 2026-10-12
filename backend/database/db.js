@@ -61,6 +61,7 @@ export function initDatabase(forceReseed = false) {
       overall_summary TEXT,
       recommended_action TEXT,
       model_version TEXT DEFAULT 'FabriSense YOLOv8',
+      metadata TEXT,
       created_at TEXT NOT NULL,
       updated_at TEXT NOT NULL,
       FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE SET NULL
@@ -111,6 +112,10 @@ export function initDatabase(forceReseed = false) {
 
   try {
     db.prepare("ALTER TABLE reports ADD COLUMN status TEXT DEFAULT 'Generated'").run();
+  } catch (_e) {}
+
+  try {
+    db.prepare('ALTER TABLE inspections ADD COLUMN metadata TEXT').run();
   } catch (_e) {}
 
   const currentCount = db.prepare('SELECT COUNT(*) as c FROM inspections').get().c;

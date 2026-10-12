@@ -11,6 +11,7 @@ import { initDatabase } from './database/db.js';
 import otpRoutes from './routes/otp.routes.js';
 import adminRoutes from './routes/admin.routes.js';
 import commonInspectionsRoutes from './routes/common.inspections.routes.js';
+import storageRoutes from './routes/storage.routes.js';
 
 // Initialize SQLite Database schema & seeds
 initDatabase();
@@ -51,6 +52,9 @@ app.use('/api', otpRoutes);
 
 // Shared Inspection API (Mobile & Admin)
 app.use('/api/inspections', commonInspectionsRoutes);
+
+// Supabase Storage Secure Image Streaming & Proxy
+app.use('/api/storage', storageRoutes);
 
 // Admin Portal APIs
 app.use('/api/admin', adminRoutes);

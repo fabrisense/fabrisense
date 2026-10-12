@@ -37,6 +37,13 @@ export const YOLO_API_URL = process.env.YOLO_API_URL || 'http://localhost:8000/p
 // Uploads Directory
 export const UPLOADS_DIR = process.env.UPLOADS_DIR || path.resolve(__dirname, '../uploads/inspections');
 
+// Supabase Storage Bucket
+export const SUPABASE_STORAGE_BUCKET = process.env.SUPABASE_STORAGE_BUCKET || 'fabric-images';
+
+// Resend Email API configuration
+export const RESEND_API_KEY = (process.env.RESEND_API_KEY || '').trim();
+export const RESEND_FROM = (process.env.RESEND_FROM || process.env.EMAIL_FROM || process.env.SMTP_FROM || 'FabriSense <onboarding@resend.dev>').trim();
+
 // Email / SMTP — supports both EMAIL_* and SMTP_* variable naming conventions
 export const SMTP = {
   host:   (process.env.EMAIL_HOST   || process.env.SMTP_HOST   || 'smtp.gmail.com').trim(),
@@ -50,5 +57,21 @@ export const SMTP = {
 /** Returns true when SMTP credentials have been set in .env */
 export function smtpConfigured() {
   return !!(SMTP.user && SMTP.pass);
+}
+
+/** Returns true when Resend API key is configured */
+export function resendConfigured() {
+  return !!RESEND_API_KEY;
+}
+
+/** Returns email provider status and active provider name */
+export function getEmailServiceStatus() {
+  if (resendConfigured()) {
+    return { configured: true, provider: 'resend' };
+  }
+  if (smtpConfigured()) {
+    return { configured: true, provider: 'smtp' };
+  }
+  return { configured: false, provider: 'none' };
 }
 

@@ -9,6 +9,24 @@
 import sqliteDb from '../database/db.js';
 import { getSupabaseAdmin, isSupabaseConfigured, uploadToSupabaseStorage } from './supabase.service.js';
 
+function formatRelativeTime(dateStr) {
+  if (!dateStr) return 'Just now';
+  try {
+    const diffMs = Date.now() - new Date(dateStr).getTime();
+    if (isNaN(diffMs)) return 'Recently';
+    const diffMins = Math.floor(diffMs / (1000 * 60));
+    if (diffMins < 2) return 'Just now';
+    if (diffMins < 60) return `${diffMins}m ago`;
+    const diffHours = Math.floor(diffMins / 60);
+    if (diffHours < 24) return `${diffHours}h ago`;
+    const diffDays = Math.floor(diffHours / 24);
+    if (diffDays === 1) return 'Yesterday';
+    return `${diffDays}d ago`;
+  } catch (_e) {
+    return 'Recently';
+  }
+}
+
 export class DatabaseService {
   /**
    * Returns true if Supabase Cloud is currently active
@@ -26,7 +44,7 @@ export class DatabaseService {
       try {
         const { data: allInspections, error: inspErr } = await supabase
           .from('inspections')
-          .select('id, inspection_id, grade, status, defect_count, inspection_date, fabric_name, fabric_type, inspector_name, user_id')
+          .select('id, inspection_id, grade, status, defect_count, inspection_date, fabric_name, fabric_type, inspector_name, user_id, created_at')
           .order('inspection_date', { ascending: false });
 
         if (!inspErr && allInspections) {
@@ -39,35 +57,41 @@ export class DatabaseService {
           const { data: defectsData } = await supabase.from('defects').select('id, defect_type, severity, confidence, inspection_id, created_at');
           const totalDefects = defectsData ? defectsData.length : allInspections.reduce((sum, i) => sum + (i.defect_count || 0), 0);
 
-          const pctA = totalInspections > 0 ? Math.round((gradeA / totalInspections) * 100) : 58;
-          const pctB = totalInspections > 0 ? Math.round((gradeB / totalInspections) * 100) : 31;
-          const pctC = totalInspections > 0 ? Math.round((gradeC / totalInspections) * 100) : 11;
+          const pctA = totalInspections > 0 ? Math.round((gradeA / totalInspections) * 100) : 0;
+          const pctB = totalInspections > 0 ? Math.round((gradeB / totalInspections) * 100) : 0;
+          const pctC = totalInspections > 0 ? Math.round((gradeC / totalInspections) * 100) : 0;
 
           // Recent 5 inspections
           const recentInspections = allInspections.slice(0, 5).map(r => ({
             id: r.id,
             inspection_id: r.inspection_id,
-            fabric_name: r.fabric_name,
-            fabric_type: r.fabric_type,
-            defect_count: r.defect_count,
+            fabric_name: r.fabric_name || r.fabric_type || 'Fabric Roll',
+            fabric_type: r.fabric_type || 'Textile',
+            defect_count: r.defect_count || 0,
             grade: r.grade,
             status: r.status,
-            inspector_name: r.inspector_name || 'Rajesh Kumar',
+            inspector_name: r.inspector_name || 'Inspector',
             inspection_date: r.inspection_date,
             time: r.inspection_date ? r.inspection_date.replace('T', ' ').slice(0, 16) : 'Just now',
           }));
 
-          // Live defects (latest 3)
-          const liveDefects = (defectsData || []).slice(0, 3).map((d, idx) => ({
-            id: d.id || idx + 1,
-            defect_type: d.defect_type,
-            fabric_name: 'Cotton Weave Sample',
-            fabric_type: 'Handloom Cotton',
-            inspection_id: d.inspection_id,
-            severity: d.severity,
-            confidence: Math.round(d.confidence),
-            time_ago: '2m ago',
-          }));
+          // Live latest defects from Supabase
+          const inspMap = {};
+          allInspections.forEach(i => { inspMap[i.inspection_id] = i; });
+
+          const liveDefects = (defectsData || []).slice(0, 5).map((d, idx) => {
+            const insp = inspMap[d.inspection_id] || {};
+            return {
+              id: d.id || idx + 1,
+              defect_type: d.defect_type || 'Defect',
+              fabric_name: insp.fabric_name || insp.fabric_type || 'Fabric Roll',
+              fabric_type: insp.fabric_type || 'Textile',
+              inspection_id: d.inspection_id,
+              severity: d.severity || 'Low',
+              confidence: Math.round(d.confidence || 0),
+              time_ago: formatRelativeTime(d.created_at || insp.inspection_date),
+            };
+          });
 
           // Defect categories
           let holesCount = 0, stainsCount = 0, brokenYarnCount = 0, tearsScratchesCount = 0, otherCount = 0;
@@ -75,18 +99,43 @@ export class DatabaseService {
             const t = (d.defect_type || '').toLowerCase();
             if (t.includes('hole')) holesCount++;
             else if (t.includes('stain')) stainsCount++;
-            else if (t.includes('broken') || t.includes('yarn') || t.includes('thread')) brokenYarnCount++;
+            else if (t.includes('broken') || t.includes('yarn') || t.includes('thread') || t.includes('knot')) brokenYarnCount++;
             else if (t.includes('tear') || t.includes('scratch') || t.includes('weft')) tearsScratchesCount++;
             else otherCount++;
           });
 
           const defectDistribution = [
-            { name: 'Holes', count: holesCount, color: '#ef4444' },
-            { name: 'Stains', count: stainsCount, color: '#f59e0b' },
-            { name: 'Broken Yarn', count: brokenYarnCount, color: '#3b82f6' },
-            { name: 'Tears & Scratches', count: tearsScratchesCount, color: '#8b5cf6' },
-            { name: 'Other', count: otherCount, color: '#6b7280' },
+            { name: 'Holes', count: holesCount, color: '#dc2626' },
+            { name: 'Stains', count: stainsCount, color: '#ea580c' },
+            { name: 'Broken Yarn', count: brokenYarnCount, color: '#16806e' },
+            { name: 'Tears & Scratches', count: tearsScratchesCount, color: '#2563eb' },
+            { name: 'Other', count: otherCount, color: '#64748b' },
           ];
+
+          // Compute real monthly trends from actual inspection timestamps
+          const now = new Date();
+          const monthMap = {};
+          const monthKeys = [];
+          const monthNames = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+          for (let m = 5; m >= 0; m--) {
+            const d = new Date(now.getFullYear(), now.getMonth() - m, 1);
+            const yyyy = d.getFullYear();
+            const mm = String(d.getMonth() + 1).padStart(2, '0');
+            const key = `${yyyy}-${mm}`;
+            monthKeys.push(key);
+            monthMap[key] = { month: monthNames[d.getMonth()], rawMonth: key, total: 0, gradeA: 0, gradeB: 0, gradeC: 0 };
+          }
+
+          allInspections.forEach(i => {
+            const dateStr = (i.inspection_date || i.created_at || '').slice(0, 7);
+            if (monthMap[dateStr]) {
+              monthMap[dateStr].total++;
+              if (i.grade === 'A') monthMap[dateStr].gradeA++;
+              else if (i.grade === 'B') monthMap[dateStr].gradeB++;
+              else if (i.grade === 'C') monthMap[dateStr].gradeC++;
+            }
+          });
+          const trends = monthKeys.map(k => monthMap[k]);
 
           return {
             kpis: {
@@ -96,15 +145,11 @@ export class DatabaseService {
               gradeAPercentage: pctA,
               gradeBPercentage: pctB,
               gradeCPercentage: pctC,
+              gradeACount: gradeA,
+              gradeBCount: gradeB,
+              gradeCCount: gradeC,
             },
-            trends: [
-              { month: 'Apr', total: Math.round(totalInspections * 0.12), gradeA: Math.round(gradeA * 0.12), gradeB: Math.round(gradeB * 0.12), gradeC: Math.round(gradeC * 0.12) },
-              { month: 'May', total: Math.round(totalInspections * 0.14), gradeA: Math.round(gradeA * 0.14), gradeB: Math.round(gradeB * 0.14), gradeC: Math.round(gradeC * 0.14) },
-              { month: 'Jun', total: Math.round(totalInspections * 0.16), gradeA: Math.round(gradeA * 0.16), gradeB: Math.round(gradeB * 0.16), gradeC: Math.round(gradeC * 0.16) },
-              { month: 'Jul', total: Math.round(totalInspections * 0.18), gradeA: Math.round(gradeA * 0.18), gradeB: Math.round(gradeB * 0.18), gradeC: Math.round(gradeC * 0.18) },
-              { month: 'Aug', total: Math.round(totalInspections * 0.19), gradeA: Math.round(gradeA * 0.19), gradeB: Math.round(gradeB * 0.19), gradeC: Math.round(gradeC * 0.19) },
-              { month: 'Sep', total: Math.round(totalInspections * 0.21), gradeA: Math.round(gradeA * 0.21), gradeB: Math.round(gradeB * 0.21), gradeC: Math.round(gradeC * 0.21) },
-            ],
+            trends,
             defectDistribution,
             recentInspections,
             liveDefects,
@@ -122,19 +167,23 @@ export class DatabaseService {
     const defectFree = sqliteDb.prepare('SELECT COUNT(*) as count FROM inspections WHERE defect_count = 0').get().count;
 
     const gradeCounts = sqliteDb.prepare(`
-      SELECT 
+      SELECT
         SUM(CASE WHEN grade = 'A' THEN 1 ELSE 0 END) as gradeA,
         SUM(CASE WHEN grade = 'B' THEN 1 ELSE 0 END) as gradeB,
         SUM(CASE WHEN grade = 'C' THEN 1 ELSE 0 END) as gradeC
       FROM inspections
     `).get();
 
-    const gradeA = totalInspections > 0 ? Math.round(((gradeCounts.gradeA || 0) / totalInspections) * 100) : 0;
-    const gradeB = totalInspections > 0 ? Math.round(((gradeCounts.gradeB || 0) / totalInspections) * 100) : 0;
-    const gradeC = totalInspections > 0 ? Math.round(((gradeCounts.gradeC || 0) / totalInspections) * 100) : 0;
+    const countA = gradeCounts?.gradeA || 0;
+    const countB = gradeCounts?.gradeB || 0;
+    const countC = gradeCounts?.gradeC || 0;
+
+    const gradeA = totalInspections > 0 ? Math.round((countA / totalInspections) * 100) : 0;
+    const gradeB = totalInspections > 0 ? Math.round((countB / totalInspections) * 100) : 0;
+    const gradeC = totalInspections > 0 ? Math.round((countC / totalInspections) * 100) : 0;
 
     const trendsRaw = sqliteDb.prepare(`
-      SELECT 
+      SELECT
         substr(inspection_date, 1, 7) as month,
         COUNT(*) as total,
         SUM(CASE WHEN grade = 'A' THEN 1 ELSE 0 END) as gradeA,
@@ -178,21 +227,21 @@ export class DatabaseService {
       const type = (item.defect_type || '').toLowerCase();
       if (type.includes('hole')) holesCount += item.count;
       else if (type.includes('stain')) stainsCount += item.count;
-      else if (type.includes('broken') || type.includes('yarn') || type.includes('thread')) brokenYarnCount += item.count;
+      else if (type.includes('broken') || type.includes('yarn') || type.includes('thread') || type.includes('knot')) brokenYarnCount += item.count;
       else if (type.includes('tear') || type.includes('scratch') || type.includes('weft')) tearsScratchesCount += item.count;
       else otherCount += item.count;
     });
 
     const defectDistribution = [
-      { name: 'Holes', count: holesCount, color: '#ef4444' },
-      { name: 'Stains', count: stainsCount, color: '#f59e0b' },
-      { name: 'Broken Yarn', count: brokenYarnCount, color: '#3b82f6' },
-      { name: 'Tears & Scratches', count: tearsScratchesCount, color: '#8b5cf6' },
-      { name: 'Other', count: otherCount, color: '#6b7280' },
+      { name: 'Holes', count: holesCount, color: '#dc2626' },
+      { name: 'Stains', count: stainsCount, color: '#ea580c' },
+      { name: 'Broken Yarn', count: brokenYarnCount, color: '#16806e' },
+      { name: 'Tears & Scratches', count: tearsScratchesCount, color: '#2563eb' },
+      { name: 'Other', count: otherCount, color: '#64748b' },
     ];
 
     const recentRows = sqliteDb.prepare(`
-      SELECT 
+      SELECT
         i.id,
         i.inspection_id,
         i.fabric_type,
@@ -204,41 +253,38 @@ export class DatabaseService {
         COALESCE(u.name, 'Rajesh Kumar') as inspector_name
       FROM inspections i
       LEFT JOIN users u ON i.user_id = u.id
-      ORDER BY 
-        CASE WHEN i.inspection_id LIKE 'INS-049%' THEN 0 ELSE 1 END,
-        i.inspection_id DESC
+      ORDER BY i.id DESC
       LIMIT 5
     `).all();
 
-    const liveDefects = [
-      {
-        id: 1,
-        defect_type: 'Slub Knot',
-        fabric_name: 'Egyptian Cotton #102',
-        fabric_type: 'Egyptian Cotton',
-        inspection_id: 'INS-0496',
-        severity: 'Critical',
-        time_ago: '2m ago',
-      },
-      {
-        id: 2,
-        defect_type: 'Broken Weft',
-        fabric_name: 'Indigo Denim #383',
-        fabric_type: 'Indigo Denim',
-        inspection_id: 'INS-0497',
-        severity: 'Moderate',
-        time_ago: '14m ago',
-      },
-      {
-        id: 3,
-        defect_type: 'Oil Stain',
-        fabric_name: 'Egyptian Cotton #098',
-        fabric_type: 'Egyptian Cotton',
-        inspection_id: 'INS-2024-0040',
-        severity: 'Low',
-        time_ago: '41m ago',
-      },
-    ];
+    // Query real live defects from SQLite
+    const liveDefectsRows = sqliteDb.prepare(`
+      SELECT
+        d.id,
+        d.defect_type,
+        d.severity,
+        d.confidence,
+        d.inspection_id,
+        d.created_at,
+        i.fabric_name,
+        i.fabric_type,
+        i.inspection_date
+      FROM defects d
+      JOIN inspections i ON d.inspection_id = i.inspection_id
+      ORDER BY d.id DESC
+      LIMIT 5
+    `).all();
+
+    const liveDefects = liveDefectsRows.map(d => ({
+      id: d.id,
+      defect_type: d.defect_type,
+      fabric_name: d.fabric_name || d.fabric_type || 'Fabric Roll',
+      fabric_type: d.fabric_type || 'Textile',
+      inspection_id: d.inspection_id,
+      severity: d.severity,
+      confidence: Math.round(d.confidence || 0),
+      time_ago: formatRelativeTime(d.created_at || d.inspection_date),
+    }));
 
     return {
       kpis: {
@@ -248,6 +294,9 @@ export class DatabaseService {
         gradeAPercentage: gradeA,
         gradeBPercentage: gradeB,
         gradeCPercentage: gradeC,
+        gradeACount: countA,
+        gradeBCount: countB,
+        gradeCCount: countC,
       },
       trends,
       defectDistribution,
@@ -315,6 +364,8 @@ export class DatabaseService {
               inspection_date: r.inspection_date,
               inspector_name: r.inspector_name || 'Rajesh Kumar',
               image_path: r.image_url || r.image_path,
+              image_url: r.image_url || r.image_path,
+              metadata: typeof r.metadata === 'string' ? JSON.parse(r.metadata || '{}') : (r.metadata || {}),
               overall_summary: r.overall_summary,
               recommended_action: r.recommended_action,
               model_version: r.model_version,
@@ -373,7 +424,7 @@ export class DatabaseService {
     const total = sqliteDb.prepare(countSql).get(...params).total;
 
     const selectSql = `
-      SELECT 
+      SELECT
         i.id,
         i.inspection_id,
         i.user_id,
@@ -387,6 +438,7 @@ export class DatabaseService {
         i.overall_summary,
         i.recommended_action,
         i.model_version,
+        i.metadata,
         i.created_at,
         COALESCE(u.name, 'Rajesh Kumar') as inspector_name,
         u.email as inspector_email
@@ -399,7 +451,11 @@ export class DatabaseService {
     const rows = sqliteDb.prepare(selectSql).all(...params, limitNum, offset);
 
     return {
-      inspections: rows,
+      inspections: rows.map(r => ({
+        ...r,
+        image_url: r.image_path,
+        metadata: typeof r.metadata === 'string' ? JSON.parse(r.metadata || '{}') : (r.metadata || {}),
+      })),
       pagination: {
         total,
         page: pageNum,
@@ -428,7 +484,9 @@ export class DatabaseService {
 
           return {
             ...insp,
-            image_path: insp.image_url,
+            image_path: insp.image_url || insp.image_path,
+            image_url: insp.image_url || insp.image_path,
+            metadata: typeof insp.metadata === 'string' ? JSON.parse(insp.metadata || '{}') : (insp.metadata || {}),
             defects: defects || [],
             driver: 'supabase',
           };
@@ -451,6 +509,9 @@ export class DatabaseService {
     const defects = sqliteDb.prepare('SELECT * FROM defects WHERE inspection_id = ?').all(inspectionId);
     return {
       ...insp,
+      image_path: insp.image_path,
+      image_url: insp.image_path,
+      metadata: typeof insp.metadata === 'string' ? JSON.parse(insp.metadata || '{}') : (insp.metadata || {}),
       defects,
       driver: 'sqlite',
     };
@@ -478,10 +539,24 @@ export class DatabaseService {
     inspectorName = 'Ananthi Kumar',
     inspectorEmail = '',
     defects = [],
+    metadata = null,
   }) {
     const now = new Date().toISOString();
     const cleanGrade = ['A', 'B', 'C'].includes(String(grade).toUpperCase()) ? String(grade).toUpperCase() : 'B';
     const cleanStatus = ['Passed', 'Review', 'Failed'].includes(status) ? status : (cleanGrade === 'A' ? 'Passed' : cleanGrade === 'B' ? 'Review' : 'Failed');
+
+    // Build rich storage and inspection metadata
+    const cleanMetadata = {
+      storage_bucket: metadata?.storage_bucket || 'fabric-images',
+      storage_path: metadata?.storage_path || (typeof imagePath === 'string' && imagePath.includes('/fabric-images/') ? imagePath.split('/fabric-images/')[1] : null),
+      signed_url: metadata?.signed_url || (typeof imagePath === 'string' && imagePath.startsWith('http') ? imagePath : null),
+      proxy_url: metadata?.proxy_url || (typeof imagePath === 'string' && imagePath.startsWith('/api/storage') ? imagePath : null),
+      mime_type: metadata?.mime_type || 'image/jpeg',
+      size_bytes: metadata?.size_bytes || null,
+      yolo_annotated: true,
+      uploaded_at: now,
+      ...(metadata || {}),
+    };
 
     let savedToCloud = false;
     let cloudError = null;
@@ -501,7 +576,7 @@ export class DatabaseService {
           if (prof) userId = prof.id;
         }
 
-        // Upsert inspection
+        // Upsert inspection with cloud image_url and jsonb metadata
         const { data: savedInsp, error: inspErr } = await supabase
           .from('inspections')
           .upsert({
@@ -518,6 +593,7 @@ export class DatabaseService {
             overall_summary: summary,
             recommended_action: recommendedAction,
             model_version: modelVersion,
+            metadata: cleanMetadata,
             updated_at: now,
           }, { onConflict: 'inspection_id' })
           .select()
@@ -582,17 +658,19 @@ export class DatabaseService {
       if (u) userId = u.id;
     }
 
+    const metadataStr = JSON.stringify(cleanMetadata);
+
     if (!existing) {
       sqliteDb.prepare(`
         INSERT INTO inspections (
           inspection_id, user_id, fabric_type, fabric_name, image_path,
           inspection_date, defect_count, grade, status, overall_summary,
-          recommended_action, model_version, created_at, updated_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+          recommended_action, model_version, metadata, created_at, updated_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       `).run(
         inspectionId, userId, fabricType, fabricName, imagePath,
         now, defectCount, cleanGrade, cleanStatus, summary,
-        recommendedAction, modelVersion, now, now
+        recommendedAction, modelVersion, metadataStr, now, now
       );
 
       // Defects
@@ -629,6 +707,18 @@ export class DatabaseService {
         `/reports/${inspectionId}.pdf`,
         'Generated',
         now
+      );
+    } else {
+      sqliteDb.prepare(`
+        UPDATE inspections SET
+          fabric_type = ?, fabric_name = ?, image_path = ?, defect_count = ?,
+          grade = ?, status = ?, overall_summary = ?, recommended_action = ?,
+          model_version = ?, metadata = ?, updated_at = ?
+        WHERE inspection_id = ?
+      `).run(
+        fabricType, fabricName, imagePath, defectCount,
+        cleanGrade, cleanStatus, summary, recommendedAction,
+        modelVersion, metadataStr, now, inspectionId
       );
     }
 
@@ -904,7 +994,7 @@ export class DatabaseService {
       LEFT JOIN inspections i ON u.id = i.user_id
       WHERE ${conditions.join(' AND ')}
       GROUP BY u.id
-      ORDER BY 
+      ORDER BY
         CASE LOWER(u.email)
           WHEN 'aarav.sharma@petrosoft.in' THEN 1
           WHEN 'priya.patel@petrosoft.in' THEN 2
@@ -918,6 +1008,384 @@ export class DatabaseService {
     `;
     const users = sqliteDb.prepare(sql).all(...params);
     return { users, driver: 'sqlite' };
+  }
+
+  // ───────────────────────────────────────────────────────────────────────────
+  // DEFECT ANALYTICS
+  // ───────────────────────────────────────────────────────────────────────────
+  static async getDefectAnalytics() {
+    if (this.isCloud()) {
+      const supabase = getSupabaseAdmin();
+      try {
+        const { data: defects, error: defErr } = await supabase
+          .from('defects')
+          .select('id, defect_type, severity, confidence, inspection_id, created_at');
+
+        const { data: inspections, error: inspErr } = await supabase
+          .from('inspections')
+          .select('id, inspection_id, fabric_name, fabric_type, grade, status');
+
+        if (!defErr && defects && !inspErr && inspections) {
+          const totalAnomalies = defects.length;
+          const totalInspections = inspections.length;
+
+          const typeCounts = {};
+          defects.forEach(d => {
+            const t = d.defect_type || 'Other';
+            typeCounts[t] = (typeCounts[t] || 0) + 1;
+          });
+
+          const colors = ['#dc2626', '#ea580c', '#16806e', '#2563eb', '#9333ea', '#64748b'];
+          const occurrencesByType = Object.entries(typeCounts)
+            .sort((a, b) => b[1] - a[1])
+            .map(([type, count], idx) => ({
+              type,
+              count,
+              color: colors[idx % colors.length],
+              pct: totalAnomalies > 0 ? Math.round((count / totalAnomalies) * 100) : 0,
+            }));
+
+          const sevCounts = { 'Critical': 0, 'Moderate': 0, 'Low': 0 };
+          defects.forEach(d => {
+            const s = d.severity === 'Critical' ? 'Critical' : (d.severity === 'Moderate' ? 'Moderate' : 'Low');
+            sevCounts[s] = (sevCounts[s] || 0) + 1;
+          });
+
+          const severityClassification = [
+            { severity: 'High / Critical', count: sevCounts['Critical'], percentage: totalAnomalies > 0 ? `${Math.round((sevCounts['Critical'] / totalAnomalies) * 100)}%` : '0%', color: '#dc2626' },
+            { severity: 'Moderate', count: sevCounts['Moderate'], percentage: totalAnomalies > 0 ? `${Math.round((sevCounts['Moderate'] / totalAnomalies) * 100)}%` : '0%', color: '#ea580c' },
+            { severity: 'Minor anomalies', count: sevCounts['Low'], percentage: totalAnomalies > 0 ? `${Math.round((sevCounts['Low'] / totalAnomalies) * 100)}%` : '0%', color: '#16806e' },
+          ];
+
+          const topType = occurrencesByType[0] || { type: 'None', count: 0, pct: 0 };
+          const avgConf = totalAnomalies > 0
+            ? (defects.reduce((acc, d) => acc + (d.confidence || 0), 0) / totalAnomalies).toFixed(1)
+            : '0';
+
+          const inspMap = {};
+          inspections.forEach(i => { inspMap[i.inspection_id] = i; });
+
+          const categoryDetails = occurrencesByType.map(t => {
+            const matchingDefects = defects.filter(d => (d.defect_type || '') === t.type);
+            const fabricCount = {};
+            let worstGrade = 'A';
+            matchingDefects.forEach(d => {
+              const i = inspMap[d.inspection_id];
+              if (i) {
+                const fName = i.fabric_name || i.fabric_type || 'Standard Weave';
+                fabricCount[fName] = (fabricCount[fName] || 0) + 1;
+                if (i.grade === 'C') worstGrade = 'C';
+                else if (i.grade === 'B' && worstGrade !== 'C') worstGrade = 'B';
+              }
+            });
+            const topFabric = Object.entries(fabricCount).sort((a,b) => b[1]-a[1])[0]?.[0] || 'Handloom Weave';
+
+            return {
+              category: t.type,
+              occurrences: t.count,
+              shareRate: `${t.pct}%`,
+              commonFabricType: topFabric,
+              qualityImpact: worstGrade === 'C' ? 'Grade C downgrade' : (worstGrade === 'B' ? 'Grade B downgrade' : 'Minimal impact'),
+              impactColor: worstGrade === 'C' ? '#dc2626' : (worstGrade === 'B' ? '#ea580c' : '#16806e'),
+            };
+          });
+
+          return {
+            kpis: {
+              totalAnomalies,
+              totalInspections,
+              classificationCategories: occurrencesByType.length,
+              primaryContributor: topType.type,
+              primaryContributorSub: `${topType.pct}% of all defect occurrences`,
+              averageSeverity: sevCounts['Critical'] > sevCounts['Moderate'] ? 'Critical' : (sevCounts['Moderate'] > 0 ? 'Moderate' : 'Low'),
+              averageSeveritySub: `Avg confidence of ${avgConf}%`,
+            },
+            occurrencesByType,
+            severityClassification,
+            categoryDetails,
+            driver: 'supabase',
+          };
+        }
+      } catch (err) {
+        console.warn('[DatabaseService] Supabase defect analytics fallback:', err.message);
+      }
+    }
+
+    // SQLite Fallback
+    const totalAnomalies = sqliteDb.prepare('SELECT COUNT(*) as count FROM defects').get().count;
+    const totalInspections = sqliteDb.prepare('SELECT COUNT(*) as count FROM inspections').get().count;
+
+    const occurrencesRaw = sqliteDb.prepare(`
+      SELECT defect_type as type, COUNT(*) as count
+      FROM defects
+      GROUP BY defect_type
+      ORDER BY count DESC
+    `).all();
+
+    const colors = ['#dc2626', '#ea580c', '#16806e', '#2563eb', '#9333ea', '#64748b'];
+    const occurrencesByType = occurrencesRaw.map((o, idx) => ({
+      type: o.type,
+      count: o.count,
+      color: colors[idx % colors.length],
+      pct: totalAnomalies > 0 ? Math.round((o.count / totalAnomalies) * 100) : 0,
+    }));
+
+    const sevCountsRaw = sqliteDb.prepare(`
+      SELECT
+        SUM(CASE WHEN severity = 'Critical' THEN 1 ELSE 0 END) as critical,
+        SUM(CASE WHEN severity = 'Moderate' THEN 1 ELSE 0 END) as moderate,
+        SUM(CASE WHEN severity NOT IN ('Critical', 'Moderate') THEN 1 ELSE 0 END) as low
+      FROM defects
+    `).get();
+
+    const critCount = sevCountsRaw?.critical || 0;
+    const modCount = sevCountsRaw?.moderate || 0;
+    const lowCount = sevCountsRaw?.low || 0;
+
+    const severityClassification = [
+      { severity: 'High / Critical', count: critCount, percentage: totalAnomalies > 0 ? `${Math.round((critCount / totalAnomalies) * 100)}%` : '0%', color: '#dc2626' },
+      { severity: 'Moderate', count: modCount, percentage: totalAnomalies > 0 ? `${Math.round((modCount / totalAnomalies) * 100)}%` : '0%', color: '#ea580c' },
+      { severity: 'Minor anomalies', count: lowCount, percentage: totalAnomalies > 0 ? `${Math.round((lowCount / totalAnomalies) * 100)}%` : '0%', color: '#16806e' },
+    ];
+
+    const topType = occurrencesByType[0] || { type: 'None', count: 0, pct: 0 };
+    const avgConf = sqliteDb.prepare('SELECT ROUND(AVG(confidence), 1) as avg FROM defects').get()?.avg || '0';
+
+    const categoryDetailsRaw = sqliteDb.prepare(`
+      SELECT
+        d.defect_type as category,
+        COUNT(d.id) as occurrences,
+        ROUND((COUNT(d.id) * 100.0) / ?, 1) as shareRateNum,
+        (
+          SELECT COALESCE(i2.fabric_name, i2.fabric_type)
+          FROM defects d2
+          JOIN inspections i2 ON d2.inspection_id = i2.inspection_id
+          WHERE d2.defect_type = d.defect_type
+          GROUP BY COALESCE(i2.fabric_name, i2.fabric_type)
+          ORDER BY COUNT(*) DESC
+          LIMIT 1
+        ) as commonFabricType,
+        CASE
+          WHEN SUM(CASE WHEN d.severity = 'Critical' THEN 1 ELSE 0 END) > 0 THEN 'Grade C downgrade'
+          WHEN SUM(CASE WHEN d.severity = 'Moderate' THEN 1 ELSE 0 END) > 0 THEN 'Grade B downgrade'
+          ELSE 'Minimal impact'
+        END as qualityImpact,
+        CASE
+          WHEN SUM(CASE WHEN d.severity = 'Critical' THEN 1 ELSE 0 END) > 0 THEN '#dc2626'
+          WHEN SUM(CASE WHEN d.severity = 'Moderate' THEN 1 ELSE 0 END) > 0 THEN '#ea580c'
+          ELSE '#16806e'
+        END as impactColor
+      FROM defects d
+      GROUP BY d.defect_type
+      ORDER BY occurrences DESC
+    `).all(totalAnomalies || 1);
+
+    const categoryDetails = categoryDetailsRaw.map(c => ({
+      ...c,
+      shareRate: `${c.shareRateNum}%`,
+    }));
+
+    return {
+      kpis: {
+        totalAnomalies,
+        totalInspections,
+        classificationCategories: occurrencesByType.length,
+        primaryContributor: topType.type,
+        primaryContributorSub: `${topType.pct}% of all defect occurrences`,
+        averageSeverity: critCount > modCount ? 'Critical' : (modCount > 0 ? 'Moderate' : 'Low'),
+        averageSeveritySub: `Avg confidence of ${avgConf}%`,
+      },
+      occurrencesByType,
+      severityClassification,
+      categoryDetails,
+      driver: 'sqlite',
+    };
+  }
+
+  // ───────────────────────────────────────────────────────────────────────────
+  // QUALITY ANALYTICS
+  // ───────────────────────────────────────────────────────────────────────────
+  static async getQualityAnalytics() {
+    if (this.isCloud()) {
+      const supabase = getSupabaseAdmin();
+      try {
+        const { data: allInspections, error } = await supabase
+          .from('inspections')
+          .select('id, inspection_id, grade, status, defect_count, inspection_date, created_at')
+          .order('inspection_date', { ascending: false });
+
+        if (!error && allInspections) {
+          const totalInspections = allInspections.length;
+          const countA = allInspections.filter(i => i.grade === 'A').length;
+          const countB = allInspections.filter(i => i.grade === 'B').length;
+          const countC = allInspections.filter(i => i.grade === 'C').length;
+
+          const ratioA = totalInspections > 0 ? Math.round((countA / totalInspections) * 100) : 0;
+          const ratioB = totalInspections > 0 ? Math.round((countB / totalInspections) * 100) : 0;
+          const ratioC = totalInspections > 0 ? Math.round((countC / totalInspections) * 100) : 0;
+
+          const distribution = [
+            { grade: 'Grade A', count: countA, ratio: `${ratioA}%`, color: '#16806e', label: 'Premium Export Standard' },
+            { grade: 'Grade B', count: countB, ratio: `${ratioB}%`, color: '#d97706', label: 'Minor Tolerance / Review' },
+            { grade: 'Grade C', count: countC, ratio: `${ratioC}%`, color: '#dc2626', label: 'Critical Flaw / Rejected' },
+          ];
+
+          const now = new Date();
+          const monthKeys = [];
+          const monthMap = {};
+          const monthNames = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+          for (let m = 5; m >= 0; m--) {
+            const d = new Date(now.getFullYear(), now.getMonth() - m, 1);
+            const yyyy = d.getFullYear();
+            const mm = String(d.getMonth() + 1).padStart(2, '0');
+            const key = `${yyyy}-${mm}`;
+            monthKeys.push(key);
+            monthMap[key] = { month: monthNames[d.getMonth()], rawMonth: key, total: 0, gradeA: 0, gradeB: 0, gradeC: 0 };
+          }
+
+          allInspections.forEach(i => {
+            const dateStr = (i.inspection_date || i.created_at || '').slice(0, 7);
+            if (monthMap[dateStr]) {
+              monthMap[dateStr].total++;
+              if (i.grade === 'A') monthMap[dateStr].gradeA++;
+              else if (i.grade === 'B') monthMap[dateStr].gradeB++;
+              else if (i.grade === 'C') monthMap[dateStr].gradeC++;
+            }
+          });
+
+          const qualityTrends = monthKeys.map(k => {
+            const t = monthMap[k];
+            const tot = t.total || 1;
+            return {
+              ...t,
+              gradeAPercent: t.total > 0 ? Math.round((t.gradeA / tot) * 100) : 0,
+              gradeBPercent: t.total > 0 ? Math.round((t.gradeB / tot) * 100) : 0,
+              gradeCPercent: t.total > 0 ? Math.round((t.gradeC / tot) * 100) : 0,
+            };
+          });
+
+          const defectFreqVsGrade = ['A', 'B', 'C'].map(g => {
+            const matches = allInspections.filter(i => i.grade === g);
+            const cnt = matches.length;
+            const sumDef = matches.reduce((acc, i) => acc + (i.defect_count || 0), 0);
+            return {
+              grade: g,
+              inspectionsCount: cnt,
+              avgDefects: cnt > 0 ? Number((sumDef / cnt).toFixed(2)) : 0,
+              minDefects: cnt > 0 ? Math.min(...matches.map(i => i.defect_count || 0)) : 0,
+              maxDefects: cnt > 0 ? Math.max(...matches.map(i => i.defect_count || 0)) : 0,
+            };
+          });
+
+          return {
+            ratios: {
+              gradeA: `${ratioA}%`,
+              gradeB: `${ratioB}%`,
+              gradeC: `${ratioC}%`,
+              gradeAPercent: ratioA,
+              gradeBPercent: ratioB,
+              gradeCPercent: ratioC,
+              gradeACount: countA,
+              gradeBCount: countB,
+              gradeCCount: countC,
+              totalInspections,
+            },
+            distribution,
+            qualityTrends,
+            defectFreqVsGrade,
+            driver: 'supabase',
+          };
+        }
+      } catch (err) {
+        console.warn('[DatabaseService] Supabase quality analytics fallback:', err.message);
+      }
+    }
+
+    // SQLite Fallback
+    const totalInspections = sqliteDb.prepare('SELECT COUNT(*) as count FROM inspections').get().count;
+    const gradeCounts = sqliteDb.prepare(`
+      SELECT
+        SUM(CASE WHEN grade = 'A' THEN 1 ELSE 0 END) as countA,
+        SUM(CASE WHEN grade = 'B' THEN 1 ELSE 0 END) as countB,
+        SUM(CASE WHEN grade = 'C' THEN 1 ELSE 0 END) as countC
+      FROM inspections
+    `).get();
+
+    const countA = gradeCounts?.countA || 0;
+    const countB = gradeCounts?.countB || 0;
+    const countC = gradeCounts?.countC || 0;
+
+    const ratioA = totalInspections > 0 ? Math.round((countA / totalInspections) * 100) : 0;
+    const ratioB = totalInspections > 0 ? Math.round((countB / totalInspections) * 100) : 0;
+    const ratioC = totalInspections > 0 ? Math.round((countC / totalInspections) * 100) : 0;
+
+    const distribution = [
+      { grade: 'Grade A', count: countA, ratio: `${ratioA}%`, color: '#16806e', label: 'Premium Export Standard' },
+      { grade: 'Grade B', count: countB, ratio: `${ratioB}%`, color: '#d97706', label: 'Minor Tolerance / Review' },
+      { grade: 'Grade C', count: countC, ratio: `${ratioC}%`, color: '#dc2626', label: 'Critical Flaw / Rejected' },
+    ];
+
+    const trendsRaw = sqliteDb.prepare(`
+      SELECT
+        substr(inspection_date, 1, 7) as month,
+        COUNT(*) as total,
+        SUM(CASE WHEN grade = 'A' THEN 1 ELSE 0 END) as gradeA,
+        SUM(CASE WHEN grade = 'B' THEN 1 ELSE 0 END) as gradeB,
+        SUM(CASE WHEN grade = 'C' THEN 1 ELSE 0 END) as gradeC
+      FROM inspections
+      GROUP BY substr(inspection_date, 1, 7)
+      ORDER BY month ASC
+      LIMIT 6
+    `).all();
+
+    const monthNames = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+    const qualityTrends = trendsRaw.map(t => {
+      const parts = (t.month || '').split('-');
+      const monthIdx = parseInt(parts[1] || '1', 10) - 1;
+      const tot = t.total || 1;
+      return {
+        month: monthNames[monthIdx] || t.month,
+        rawMonth: t.month,
+        total: t.total,
+        gradeA: t.gradeA,
+        gradeB: t.gradeB,
+        gradeC: t.gradeC,
+        gradeAPercent: Math.round((t.gradeA / tot) * 100),
+        gradeBPercent: Math.round((t.gradeB / tot) * 100),
+        gradeCPercent: Math.round((t.gradeC / tot) * 100),
+      };
+    });
+
+    const defectFreqVsGrade = sqliteDb.prepare(`
+      SELECT
+        grade,
+        COUNT(*) as inspectionsCount,
+        ROUND(AVG(defect_count), 2) as avgDefects,
+        MIN(defect_count) as minDefects,
+        MAX(defect_count) as maxDefects
+      FROM inspections
+      GROUP BY grade
+      ORDER BY grade ASC
+    `).all();
+
+    return {
+      ratios: {
+        gradeA: `${ratioA}%`,
+        gradeB: `${ratioB}%`,
+        gradeC: `${ratioC}%`,
+        gradeAPercent: ratioA,
+        gradeBPercent: ratioB,
+        gradeCPercent: ratioC,
+        gradeACount: countA,
+        gradeBCount: countB,
+        gradeCCount: countC,
+        totalInspections,
+      },
+      distribution,
+      qualityTrends,
+      defectFreqVsGrade,
+      driver: 'sqlite',
+    };
   }
 }
 
