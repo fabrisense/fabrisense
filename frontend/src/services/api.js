@@ -237,4 +237,53 @@ export function fetchInspectionStats() {
   return apiFetch('/inspections/stats');
 }
 
+/**
+ * Send image for AI/YOLO defect detection analysis.
+ * Supports File, Blob, or base64 dataUrl string.
+ * @param {File|Blob|string} imageInput
+ * @param {object} [metadata]
+ * @returns {Promise<{ success: boolean, data: object }>}
+ */
+export async function analyzeFabricImage(imageInput, metadata = {}) {
+  try {
+    const formData = new FormData();
+
+    if (typeof imageInput === 'string' && imageInput.startsWith('data:')) {
+      const [header, base64Data] = imageInput.split(',');
+      const mimeMatch = header.match(/:(.*?);/);
+      const mime = mimeMatch ? mimeMatch[1] : 'image/jpeg';
+      const binary = atob(base64Data);
+      const array = new Uint8Array(binary.length);
+      for (let i = 0; i < binary.length; i++) {
+        array[i] = binary.charCodeAt(i);
+      }
+      const blob = new Blob([array], { type: mime });
+      formData.append('image', blob, 'capture.jpg');
+    } else if (imageInput instanceof Blob || (typeof File !== 'undefined' && imageInput instanceof File)) {
+      formData.append('image', imageInput, imageInput.name || 'fabric.jpg');
+    } else if (typeof imageInput === 'string' && imageInput) {
+      formData.append('imagePath', imageInput);
+    }
+
+    if (metadata.fabricType) formData.append('fabricType', metadata.fabricType);
+    if (metadata.fabricName) formData.append('fabricName', metadata.fabricName);
+
+    const url = `${API_BASE}/api/inspections/analyze`;
+    const res = await fetch(url, {
+      method: 'POST',
+      body: formData,
+    });
+
+    if (!res.ok) {
+      const errorData = await res.json().catch(() => ({}));
+      throw new Error(errorData.error || `Analysis failed (HTTP ${res.status})`);
+    }
+
+    return await res.json();
+  } catch (err) {
+    console.error('[FabriSense AI] Analysis request failed:', err.message);
+    throw err;
+  }
+}
+
 
