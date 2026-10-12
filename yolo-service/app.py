@@ -2,7 +2,7 @@ from pathlib import Path
 
 from fastapi import FastAPI, File, HTTPException, UploadFile
 from ultralytics import YOLO
-from PIL import Image
+from PIL import Image, ImageOps
 import io
 
 app = FastAPI(title="FabriSense YOLO11n Inference API")
@@ -46,7 +46,9 @@ async def predict(image: UploadFile = File(...)):
 
     try:
         contents = await image.read()
-        pil_image = Image.open(io.BytesIO(contents)).convert("RGB")
+        pil_image = ImageOps.exif_transpose(
+            Image.open(io.BytesIO(contents))
+        ).convert("RGB")
 
         # Run the trained model
         results = model.predict(

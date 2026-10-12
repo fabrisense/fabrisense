@@ -10,9 +10,10 @@ import {
 } from 'lucide-react';
 import jsPDF from 'jspdf';
 import { InspectionResultFlow } from './InspectionResultFlow';
-import { syncInspectionRecord, fetchInspectionsList, analyzeFabricImage, analyzeLiveFabricFrame } from '../services/api';
+import { syncInspectionRecord, fetchInspectionsList, analyzeFabricImage, analyzeLiveFabricFrame, resolveApiAssetUrl } from '../services/api';
 import kanchipuramSilk from '../assets/kanchipuram_silk.jpg';
 import indigoDenim from '../assets/indigo_denim.jpg';
+import InspectionImageReview from './InspectionImageReview';
 
 // Analysis steps shown in image 2
 const ANALYSIS_STEPS = [
@@ -237,8 +238,9 @@ export function Dashboard({ userData = {}, onLogout }) {
               }
               const isDenim = (item.fabric_type || item.fabric_name || '').toLowerCase().includes('denim');
               const isSilk = (item.fabric_type || item.fabric_name || '').toLowerCase().includes('silk');
-              const resolvedImage = item.image_path?.startsWith('http') || item.image_path?.startsWith('data:')
-                ? item.image_path
+              const isUploadedImage = item.image_path && !item.image_path.startsWith('/assets/');
+              const resolvedImage = isUploadedImage
+                ? resolveApiAssetUrl(item.image_path)
                 : (isSilk ? kanchipuramSilk : isDenim ? indigoDenim : (item.image_path || indigoDenim));
 
               const itemDefectCount = item.defect_count !== undefined ? item.defect_count : parsedDefects.length;
@@ -560,6 +562,9 @@ export function Dashboard({ userData = {}, onLogout }) {
           const badgeBg = isCritical ? '#fee2e2' : isLow ? '#fef9c3' : '#fef3c7';
           const badgeText = isCritical ? '#dc2626' : isLow ? '#a16207' : '#d97706';
           const confStr = typeof d.confidence === 'number' ? `${d.confidence}%` : (d.confidence || '92%');
+          const hasBox = [d.x, d.y, d.width, d.height].every(
+            (coordinate) => coordinate !== null && coordinate !== undefined && Number.isFinite(Number(coordinate)),
+          );
 
           return {
             id: index + 1,
@@ -569,12 +574,12 @@ export function Dashboard({ userData = {}, onLogout }) {
             severityColor: sevColor,
             badgeBg,
             badgeText,
-            box: {
-              top: `${d.y ?? (index === 0 ? 38 : index === 1 ? 14 : 56)}%`,
-              left: `${d.x ?? (index === 0 ? 52 : index === 1 ? 12 : 8)}%`,
-              width: `${d.width ?? (index === 0 ? 40 : index === 1 ? 36 : 34)}%`,
-              height: `${d.height ?? (index === 0 ? 36 : index === 1 ? 30 : 28)}%`,
-            },
+            box: hasBox ? {
+              top: `${d.y}%`,
+              left: `${d.x}%`,
+              width: `${d.width}%`,
+              height: `${d.height}%`,
+            } : null,
             tagText: `${d.type || 'Defect'} — ${confStr}`,
             whatIsIt: d.explanation || 'A visible surface flaw detected by optical AI scan.',
             possibleCause: d.possibleCause || 'Yarn tension variance, dye inconsistency, or mechanical reed friction during weaving.',
@@ -587,6 +592,7 @@ export function Dashboard({ userData = {}, onLogout }) {
           reportId: `INS-${new Date().getFullYear()}-${Math.floor(1000 + Math.random() * 9000)}`,
           timestamp: new Date().toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) + ' • ' + new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
           fabricType: aiData?.fabricType || 'Handloom Cotton-Silk Blend',
+          imagePath: aiData?.imagePath || '',
           grade: `GRADE ${cleanGrade}`,
           gradeLetter: cleanGrade,
           gradeColor: cleanGrade === 'A' ? '#10b981' : cleanGrade === 'C' ? '#ef4444' : '#d97706',
@@ -608,6 +614,7 @@ export function Dashboard({ userData = {}, onLogout }) {
           reportId: `INS-${new Date().getFullYear()}-${Math.floor(1000 + Math.random() * 9000)}`,
           timestamp: new Date().toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) + ' • ' + new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
           fabricType: aiData?.fabricType || 'Pure Silk Weave',
+          imagePath: aiData?.imagePath || '',
           grade: `GRADE ${cleanGrade}`,
           gradeLetter: cleanGrade,
           gradeColor: '#10b981',
@@ -665,8 +672,8 @@ export function Dashboard({ userData = {}, onLogout }) {
       date: new Date().toISOString(),
       grade: `GRADE ${cleanGrade}`,
       defects: defectsCount,
-      image: record?.image || capturedImage || (fabricTitle.toLowerCase().includes('denim') ? indigoDenim : kanchipuramSilk),
-      imagePath: record?.image || capturedImage || '/assets/indigo_denim.jpg',
+      image: resolveApiAssetUrl(record?.imagePath || record?.image || capturedImage || (fabricTitle.toLowerCase().includes('denim') ? indigoDenim : kanchipuramSilk)),
+      imagePath: record?.imagePath || record?.image || capturedImage || '/assets/indigo_denim.jpg',
       type: fabricTitle.toLowerCase().includes('denim') ? 'denim' : 'silk',
       status: cleanGrade === 'A' ? 'Passed' : cleanGrade === 'B' ? 'Review' : 'Failed',
       severityScale: record?.severityScale || (cleanGrade === 'A' ? 'None' : 'Moderate'),
@@ -2469,58 +2476,16 @@ export function Dashboard({ userData = {}, onLogout }) {
             <div style={{
               position: 'relative',
               width: '100%',
-              height: '210px',
               borderRadius: '16px',
               overflow: 'hidden',
               backgroundColor: '#0a0f1a',
               border: '1px solid rgba(255, 255, 255, 0.1)',
             }}>
-              <img
+              <InspectionImageReview
                 src={selectedInspection.image || (selectedInspection.type === 'silk' ? kanchipuramSilk : indigoDenim)}
                 alt="Inspected fabric"
-                style={{ width: '100%', height: '100%', objectFit: 'cover' }}
+                defects={Array.isArray(selectedInspection.defectsList) ? selectedInspection.defectsList : []}
               />
-
-              {/* Bounding boxes overlay if defects exist */}
-              {Array.isArray(selectedInspection.defectsList) && selectedInspection.defectsList.map((d, idx) => {
-                const box = d.box || (idx === 0
-                  ? { top: '38%', left: '52%', width: '38%', height: '34%' }
-                  : idx === 1
-                  ? { top: '15%', left: '14%', width: '34%', height: '28%' }
-                  : { top: '56%', left: '10%', width: '32%', height: '26%' });
-                return (
-                  <div
-                    key={d.id || idx}
-                    style={{
-                      position: 'absolute',
-                      top: box.top,
-                      left: box.left,
-                      width: box.width,
-                      height: box.height,
-                      border: `2px solid ${d.severity === 'Critical' ? '#ef4444' : d.severity === 'Moderate' ? '#f97316' : '#eab308'}`,
-                      borderRadius: '8px',
-                      backgroundColor: 'rgba(239, 68, 68, 0.12)',
-                      boxShadow: '0 0 10px rgba(0,0,0,0.5)',
-                      pointerEvents: 'none',
-                    }}
-                  >
-                    <span style={{
-                      position: 'absolute',
-                      top: '-10px',
-                      left: '4px',
-                      backgroundColor: d.severity === 'Critical' ? '#dc2626' : d.severity === 'Moderate' ? '#d97706' : '#ca8a04',
-                      color: '#ffffff',
-                      fontSize: '9.5px',
-                      fontWeight: '800',
-                      padding: '1px 6px',
-                      borderRadius: '4px',
-                      whiteSpace: 'nowrap',
-                    }}>
-                      {d.name} {d.confidence ? `• ${d.confidence}` : ''}
-                    </span>
-                  </div>
-                );
-              })}
 
               {/* Optical Badge Overlay */}
               <div style={{

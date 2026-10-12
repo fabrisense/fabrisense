@@ -43,6 +43,12 @@ const API_BASE = (() => {
   return rawApiBase;
 })();
 
+export function resolveApiAssetUrl(assetPath) {
+  if (typeof assetPath !== 'string' || !assetPath) return assetPath;
+  if (/^(https?:|data:|blob:)/i.test(assetPath)) return assetPath;
+  return `${API_BASE}${assetPath.startsWith('/') ? assetPath : `/${assetPath}`}`;
+}
+
 /**
  * Low-level fetch wrapper.
  * Always sends / expects JSON.

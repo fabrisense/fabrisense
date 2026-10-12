@@ -484,10 +484,10 @@ export class DatabaseService {
           possibleCause: 'Yarn tension irregularity or mechanical snag during weaving run.',
           recommendedAction: d.recommended_action || 'Inspect affected area before further rolling.',
           box: {
-            top: `${d.y || 20}%`,
-            left: `${d.x || 20}%`,
-            width: `${d.width || 25}%`,
-            height: `${d.height || 22}%`,
+            top: `${d.y ?? 20}%`,
+            left: `${d.x ?? 20}%`,
+            width: `${d.width ?? 25}%`,
+            height: `${d.height ?? 22}%`,
           },
         });
       });

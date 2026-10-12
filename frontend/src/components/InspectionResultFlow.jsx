@@ -1,12 +1,13 @@
 import React, { useState } from 'react';
 import {
-  ArrowLeft, CheckCircle2, AlertTriangle, ShieldCheck, Download,
+  ArrowLeft, CheckCircle2, Download,
   Share2, FileText, Check, ChevronDown, ChevronUp, Copy,
-  Printer, X, Eye, FileSpreadsheet, Code, ImageOff, RefreshCw, History
+  Printer, X, FileSpreadsheet, Code, ImageOff, History
 } from 'lucide-react';
 import confetti from 'canvas-confetti';
 import jsPDF from 'jspdf';
 import defaultFabricImage from '../assets/indigo_denim.jpg';
+import InspectionImageReview from './InspectionImageReview';
 
 export const DEFECT_DATA = {
   reportId: 'INS-2024-0047',
@@ -92,8 +93,6 @@ export function InspectionResultFlow({
   const [isFormatsModalOpen, setIsFormatsModalOpen] = useState(false);
   const [copiedToast, setCopiedToast] = useState(false);
   const [savedSuccess, setSavedSuccess] = useState(false);
-  const [viewMode, setViewMode] = useState('annotated'); // 'annotated' | 'original'
-
   const displayImage = capturedImage || defaultFabricImage;
 
   const toggleDefectAccordion = (id) => {
@@ -287,6 +286,7 @@ export function InspectionResultFlow({
         severityScale: activeDefectData.severityScale,
         mainIssues: activeDefectData.mainIssues,
         recommendedAction: activeDefectData.recommendedAction || 'Flag roll section for cutting or mend with micro-stitching if permitted.',
+        imagePath: activeDefectData.imagePath || capturedImage || defaultFabricImage,
         image: capturedImage || defaultFabricImage,
         type: 'silk',
       });
@@ -334,10 +334,10 @@ export function InspectionResultFlow({
           {/* Thumbnail of scanned fabric */}
           {capturedImage && (
             <div style={noDefectsThumbnailWrapperStyle}>
-              <img
-                src={capturedImage}
+              <InspectionImageReview
+                src={displayImage}
                 alt="Scanned fabric"
-                style={noDefectsThumbnailStyle}
+                defects={[]}
               />
               <div style={noDefectsOverlayBadgeStyle}>
                 <Check size={12} color="#fff" strokeWidth={3} />
@@ -367,6 +367,7 @@ export function InspectionResultFlow({
                     severityScale: 'None',
                     mainIssues: 'None detected',
                     recommendedAction: 'Batch approved for production & premium export certification.',
+                    imagePath: activeDefectData.imagePath || capturedImage || defaultFabricImage,
                     image: capturedImage || defaultFabricImage,
                     type: 'clean',
                   });
@@ -469,54 +470,11 @@ export function InspectionResultFlow({
 
           {/* Fabric Preview with Defect Bounding Boxes */}
           <div style={fabricPreviewCardStyle}>
-            <img
+            <InspectionImageReview
               src={displayImage}
-              alt="Fabric Sample with Defects"
-              style={fabricImageStyle}
+              alt="Fabric sample with detected defects"
+              defects={activeDefectData.defects}
             />
-
-            {/* Dynamic Defect Bounding Boxes */}
-            {activeDefectData.defects.map((defect, idx) => {
-              const bTop = defect.box?.top || (idx === 0 ? '14%' : idx === 1 ? '38%' : '56%');
-              const bLeft = defect.box?.left || (idx === 0 ? '12%' : idx === 1 ? '52%' : '8%');
-              const bWidth = defect.box?.width || (idx === 0 ? '36%' : idx === 1 ? '40%' : '34%');
-              const bHeight = defect.box?.height || (idx === 0 ? '30%' : idx === 1 ? '36%' : '28%');
-              const sColor = defect.severityColor || (defect.severity === 'Critical' ? '#ef4444' : defect.severity === 'Low' ? '#eab308' : '#f97316');
-
-              return (
-                <div
-                  key={defect.id || idx}
-                  style={{
-                    position: 'absolute',
-                    top: bTop,
-                    left: bLeft,
-                    width: bWidth,
-                    height: bHeight,
-                    border: `2.5px solid ${sColor}`,
-                    borderRadius: '8px',
-                    backgroundColor: `${sColor}18`,
-                    boxShadow: `0 0 14px ${sColor}55`,
-                    pointerEvents: 'none',
-                  }}
-                >
-                  <div style={{
-                    position: 'absolute',
-                    top: '-24px',
-                    left: '0',
-                    backgroundColor: sColor,
-                    color: '#ffffff',
-                    fontSize: '11px',
-                    fontWeight: '700',
-                    padding: '2px 8px',
-                    borderRadius: '4px',
-                    whiteSpace: 'nowrap',
-                    boxShadow: '0 2px 6px rgba(0,0,0,0.3)',
-                  }}>
-                    {defect.tagText || `${defect.name} — ${defect.confidence}`}
-                  </div>
-                </div>
-              );
-            })}
           </div>
 
           {/* Action Button: View Defect Details */}
@@ -1126,17 +1084,10 @@ const gradeABadgeStyle = {
 const noDefectsThumbnailWrapperStyle = {
   position: 'relative',
   width: '100%',
-  height: '160px',
   borderRadius: '16px',
   overflow: 'hidden',
   border: '2px solid #bbf7d0',
   boxShadow: '0 2px 12px rgba(22,163,74,0.12)',
-};
-
-const noDefectsThumbnailStyle = {
-  width: '100%',
-  height: '100%',
-  objectFit: 'cover',
 };
 
 const noDefectsOverlayBadgeStyle = {
@@ -1293,95 +1244,11 @@ const redPulseDotStyle = {
 const fabricPreviewCardStyle = {
   position: 'relative',
   width: '100%',
-  height: '280px',
   borderRadius: '20px',
   overflow: 'hidden',
   backgroundColor: '#e2e8f0',
   boxShadow: '0 4px 16px rgba(0,0,0,0.08)',
   marginBottom: '16px',
-};
-
-const fabricImageStyle = {
-  width: '100%',
-  height: '100%',
-  objectFit: 'cover',
-  display: 'block',
-};
-
-// ── Bounding Box Styles ──
-const boxHoleStyle = {
-  position: 'absolute',
-  top: '12%',
-  left: '8%',
-  width: '38%',
-  height: '32%',
-  border: '2.5px solid #ef4444',
-  backgroundColor: 'rgba(239, 68, 68, 0.15)',
-  borderRadius: '8px',
-  boxShadow: '0 0 10px rgba(239, 68, 68, 0.3)',
-};
-
-const tagHoleStyle = {
-  position: 'absolute',
-  top: '-13px',
-  left: '-2px',
-  backgroundColor: '#ef4444',
-  color: '#ffffff',
-  fontSize: '10.5px',
-  fontWeight: '800',
-  padding: '2px 8px',
-  borderRadius: '6px',
-  whiteSpace: 'nowrap',
-};
-
-const boxStainStyle = {
-  position: 'absolute',
-  top: '36%',
-  left: '50%',
-  width: '42%',
-  height: '36%',
-  border: '2.5px solid #f97316',
-  backgroundColor: 'rgba(249, 115, 22, 0.15)',
-  borderRadius: '8px',
-  boxShadow: '0 0 10px rgba(249, 115, 22, 0.3)',
-};
-
-const tagStainStyle = {
-  position: 'absolute',
-  top: '-13px',
-  left: '-2px',
-  backgroundColor: '#f97316',
-  color: '#ffffff',
-  fontSize: '10.5px',
-  fontWeight: '800',
-  padding: '2px 8px',
-  borderRadius: '6px',
-  whiteSpace: 'nowrap',
-};
-
-const boxBrokenYarnStyle = {
-  position: 'absolute',
-  top: '56%',
-  left: '6%',
-  width: '34%',
-  height: '28%',
-  border: '2.5px solid #eab308',
-  backgroundColor: 'rgba(234, 179, 8, 0.18)',
-  borderRadius: '8px',
-  boxShadow: '0 0 10px rgba(234, 179, 8, 0.3)',
-};
-
-const tagBrokenYarnStyle = {
-  position: 'absolute',
-  top: '-13px',
-  left: '-2px',
-  backgroundColor: '#eab308',
-  color: '#713f12',
-  fontSize: '10.5px',
-  fontWeight: '800',
-  padding: '2px 8px',
-  borderRadius: '6px',
-  whiteSpace: 'nowrap',
 };
 
 // ── Screen 2: Defect Details Styles ──
