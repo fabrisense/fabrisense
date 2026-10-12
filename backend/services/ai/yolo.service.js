@@ -11,6 +11,12 @@
 import fs from 'fs';
 import path from 'path';
 import { AI_MODE, YOLO_API_URL } from '../../config/env.js';
+import {
+  CANONICAL_DEFECT_CLASSES,
+  DEFECT_DISPLAY_NAMES,
+  normalizeDefectType,
+  getDefectSeverity,
+} from './taxonomy.js';
 
 export class YoloService {
   /**
@@ -18,25 +24,33 @@ export class YoloService {
    */
   static getModelInfo() {
     const isYolo = (AI_MODE || '').toLowerCase() === 'yolo';
+    const weightsPath = path.resolve(process.cwd(), 'yolo-service/best.pt');
+    const weightsExist = fs.existsSync(weightsPath);
+
     return {
-      modelName: 'FabriSense YOLOv8',
-      modelVersion: 'v4.2.1-textile',
+      modelName: 'FabriSense YOLO11n',
+      modelVersion: 'yolo11n_v3',
+      architecture: 'YOLO11 Nano (Ultralytics 8.4.175)',
       aiMode: isYolo ? 'yolo' : 'mock',
-      aiModeLabel: isYolo ? 'YOLOv8 Production' : 'Demo (Mock Provider)',
-      status: 'Active',
-      apiStatus: isYolo ? 'Connected' : 'Online (Local Engine)',
+      aiModeLabel: isYolo ? 'YOLO11n Live Inference' : 'Demo (Mock Provider)',
+      status: isYolo ? 'Active' : (weightsExist ? 'Weights Present (Inference Standby)' : 'Demo Mode'),
+      apiStatus: isYolo ? 'Connected' : 'Offline / Standby (FastAPI server on port 8000 required)',
       apiUrl: isYolo ? YOLO_API_URL : null,
-      datasetName: 'TextileDefect-45k-augmented',
-      supportedClasses: [
-        'Holes',
-        'Stains',
-        'Broken Yarn',
-        'Slub Knot',
-        'Weft Tears',
-        'Scratches',
-        'Other'
-      ],
-      lastUpdated: '2024-09-01',
+      datasetName: 'FabriSense Textile Defect Dataset (Kaggle)',
+      supportedClasses: CANONICAL_DEFECT_CLASSES,
+      detectionClasses: CANONICAL_DEFECT_CLASSES.join(', '),
+      weightsPath: 'yolo-service/best.pt',
+      weightsPresent: weightsExist,
+      mAP50: '68.89%',
+      mAP50_95: '41.18%',
+      precision: '65.35%',
+      recall: '64.65%',
+      epochs: 50,
+      optimizer: 'AdamW',
+      imgsz: 640,
+      batchSize: 16,
+      lastUpdated: '2026-10-11',
+      lastTrainedDate: '2026-10-11',
     };
   }
 
@@ -126,27 +140,23 @@ export class YoloService {
     const rawDefects = Array.isArray(data.defects) ? data.defects : [];
     
     const defects = rawDefects.map((d, index) => {
-      const type = d.type || d.class_name || d.label || 'Defect';
+      const rawType = d.type || d.class_name || d.label || 'defect';
+      const norm = normalizeDefectType(rawType);
       const conf = Math.round(d.confidence > 1 ? d.confidence : (d.confidence || 0.85) * 100);
-      let severity = d.severity || 'Moderate';
-      if (!d.severity) {
-        if (conf > 92 || type.toLowerCase().includes('hole') || type.toLowerCase().includes('tear')) {
-          severity = 'Critical';
-        } else if (conf < 85) {
-          severity = 'Low';
-        }
-      }
+      const severity = d.severity || getDefectSeverity(norm.canonical, conf / 100);
 
       return {
         id: index + 1,
-        type,
+        type: norm.display,
+        rawClass: rawType,
+        canonicalClass: norm.canonical,
         confidence: conf,
         severity,
         x: Math.round(d.x ?? d.left ?? 20),
         y: Math.round(d.y ?? d.top ?? 20),
         width: Math.round(d.width ?? 30),
         height: Math.round(d.height ?? 30),
-        explanation: d.explanation || `Localized ${type} defect identified by YOLOv8 model.`,
+        explanation: d.explanation || `Localized ${norm.display} defect identified by YOLO11n model.`,
         recommendedAction: d.recommendedAction || d.action || 'Inspect affected fabric area.',
       };
     });
@@ -182,7 +192,7 @@ export class YoloService {
         : grade === 'B'
         ? 'Secondary manual review recommended before sewing.'
         : 'Reject roll section. Divert to rework/salvage processing.'),
-      modelVersion: 'FabriSense YOLOv8',
+      modelVersion: data.model || 'FabriSense YOLO11n',
       aiMode: 'yolo',
     };
   }
@@ -198,10 +208,10 @@ export class YoloService {
     let defectProfiles = [];
 
     if (filename.includes('kanchipuram') || fabricType.includes('silk')) {
-      // 1 defect or 0 defects
       defectProfiles = [
         {
-          type: 'Broken Yarn',
+          type: 'Thread Error',
+          canonicalClass: 'thread error',
           confidence: 88,
           severity: 'Low',
           x: 42,
@@ -215,7 +225,8 @@ export class YoloService {
     } else if (filename.includes('denim') || fabricType.includes('denim')) {
       defectProfiles = [
         {
-          type: 'Stains',
+          type: 'Stain',
+          canonicalClass: 'stain',
           confidence: 92,
           severity: 'Moderate',
           x: 52,
@@ -226,22 +237,24 @@ export class YoloService {
           recommendedAction: 'Inspect affected area before further processing or rolling.',
         },
         {
-          type: 'Slub Knot',
+          type: 'Oil Spot',
+          canonicalClass: 'oil spot',
           confidence: 86,
-          severity: 'Low',
+          severity: 'Moderate',
           x: 22,
           y: 28,
           width: 24,
           height: 20,
-          explanation: 'Localized knot and thickened irregularity in raw yarn weave.',
-          recommendedAction: 'Check finishing loom yarn feed tension.',
+          explanation: 'Surface oil residue droplet identified along weft path.',
+          recommendedAction: 'Divert to degreasing station.',
         },
       ];
     } else {
       // Default realistic 3-defect profile
       defectProfiles = [
         {
-          type: 'Stains',
+          type: 'Stain',
+          canonicalClass: 'stain',
           confidence: 92,
           severity: 'Moderate',
           x: 52,
@@ -252,7 +265,8 @@ export class YoloService {
           recommendedAction: 'Inspect the affected area before further processing or rolling.',
         },
         {
-          type: 'Holes',
+          type: 'Hole',
+          canonicalClass: 'hole',
           confidence: 94,
           severity: 'Critical',
           x: 14,
@@ -263,7 +277,8 @@ export class YoloService {
           recommendedAction: 'Flag roll section for cutting or mend with micro-stitching if permitted.',
         },
         {
-          type: 'Broken Yarn',
+          type: 'Thread Error',
+          canonicalClass: 'thread error',
           confidence: 91,
           severity: 'Low',
           x: 10,
@@ -299,11 +314,11 @@ export class YoloService {
       status,
       summary: grade === 'A'
         ? 'Zero defects detected. Fabric meets Grade A export quality standards.'
-        : 'Minor and moderate defects were detected including stain, hole, and broken yarn. The fabric is structurally viable but may require manual review before sewing.',
+        : 'Minor and moderate defects were detected including stain, hole, and thread error. The fabric is structurally viable but may require manual review before sewing.',
       recommendedAction: grade === 'A'
         ? 'Approved for packaging and dispatch.'
         : 'Flag affected roll section for cutting or spot cleaning before batch packaging.',
-      modelVersion: 'FabriSense YOLOv8',
+      modelVersion: 'FabriSense YOLO11n (Simulated)',
       aiMode: 'mock',
     };
   }
