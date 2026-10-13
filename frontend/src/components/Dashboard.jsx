@@ -37,6 +37,7 @@ export function Dashboard({ userData = {}, onLogout }) {
   // 'defects_found' | 'no_defects' | 'invalid_image'
   const [analysisResultType, setAnalysisResultType] = useState('defects_found');
   const [analysisDefectData, setAnalysisDefectData] = useState(null);
+  const [analysisError, setAnalysisError] = useState('');
 
   // ── Live Camera Stream State ──
   const [cameraError, setCameraError] = useState(null);
@@ -540,6 +541,7 @@ export function Dashboard({ userData = {}, onLogout }) {
   const runAnalysis = async (imageUrl) => {
     stopLiveCamera();
     setCapturedImage(imageUrl);
+    setAnalysisError('');
     setInspectPhase('analyzing');
     setAnalysisStep(0);
 
@@ -602,6 +604,7 @@ export function Dashboard({ userData = {}, onLogout }) {
           aiExplanation: aiData?.summary || 'Defects detected during optical analysis. The fabric is structurally viable with manual review recommended.',
           gradeExplanation: `Quality Grade ${cleanGrade} determined by AI defect density and severity thresholds.`,
           recommendedAction: aiData?.recommendedAction || 'Flag roll section for cutting or mend with micro-stitching if permitted.',
+          aiMode: aiData?.aiMode || 'unknown',
           defects: formattedDefects,
         };
 
@@ -613,7 +616,7 @@ export function Dashboard({ userData = {}, onLogout }) {
         const report = {
           reportId: `INS-${new Date().getFullYear()}-${Math.floor(1000 + Math.random() * 9000)}`,
           timestamp: new Date().toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) + ' • ' + new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-          fabricType: aiData?.fabricType || 'Pure Silk Weave',
+          fabricType: aiData?.fabricType || 'Handloom Cotton-Silk Blend',
           imagePath: aiData?.imagePath || '',
           grade: `GRADE ${cleanGrade}`,
           gradeLetter: cleanGrade,
@@ -621,9 +624,10 @@ export function Dashboard({ userData = {}, onLogout }) {
           totalDefects: 0,
           severityScale: 'None',
           mainIssues: 'None detected',
-          aiExplanation: 'Fabric surface inspected under multi-spectrum lighting. Warp and weft threads exhibit zero flaws, uniform tension, and zero blemishes.',
-          gradeExplanation: 'Fabric passed zero-defect benchmark with exceptional weave integrity.',
-          recommendedAction: 'Batch approved for production & premium export certification.',
+          aiExplanation: aiData?.summary || 'No defects were detected in the selected image.',
+          gradeExplanation: `Quality Grade ${cleanGrade} determined by AI defect density and severity thresholds.`,
+          recommendedAction: aiData?.recommendedAction || 'Review the image and confirm the result before production.',
+          aiMode: aiData?.aiMode || 'unknown',
           defects: [],
         };
         setAnalysisDefectData(report);
@@ -631,6 +635,7 @@ export function Dashboard({ userData = {}, onLogout }) {
       }
     } catch (analysisErr) {
       console.error('[FabriSense] Fabric analysis failed:', analysisErr);
+      setAnalysisError(analysisErr.message || 'The image could not be analyzed. Check your connection and try again.');
       setAnalysisDefectData(null);
       setAnalysisResultType('invalid_image');
     }
@@ -862,6 +867,8 @@ export function Dashboard({ userData = {}, onLogout }) {
     setInspectPhase('idle');
     setAnalysisStep(-1);
     setCapturedImage(null);
+    setAnalysisError('');
+    setAnalysisDefectData(null);
   };
 
   // Reset inspect state when leaving tab
@@ -1443,6 +1450,8 @@ export function Dashboard({ userData = {}, onLogout }) {
                 capturedImage={capturedImage}
                 resultType={analysisResultType}
                 defectData={analysisDefectData}
+                analysisError={analysisError}
+                onChooseImage={() => uploadInputRef.current?.click()}
                 onSaveBatch={handleSaveBatchFromFlow}
                 onBackToHome={() => handleTabChange('home')}
                 onRescan={handleRescan}

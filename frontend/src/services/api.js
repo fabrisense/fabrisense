@@ -36,8 +36,8 @@ function isCapacitorNative() {
  * In production browser builds, use the explicit URL if set.
  */
 const API_BASE = (() => {
+  if (isCapacitorNative()) return rawApiBase || 'http://localhost:5000';
   if (!rawApiBase) return ''; // empty → Vite proxy (browser dev)
-  if (isCapacitorNative()) return rawApiBase; // native app: always use explicit URL
   // Browser with an explicit URL set: only use it if it doesn't point to Android loopback
   if (rawApiBase.includes('10.0.2.2')) return ''; // strip Android-only URL in browser
   return rawApiBase;
@@ -283,10 +283,20 @@ export async function analyzeFabricImage(imageInput, metadata = {}) {
     if (metadata.fabricName) formData.append('fabricName', metadata.fabricName);
 
     const url = `${API_BASE}/api/inspections/analyze`;
-    const res = await fetch(url, {
-      method: 'POST',
-      body: formData,
-    });
+    let res;
+    try {
+      res = await fetch(url, {
+        method: 'POST',
+        body: formData,
+      });
+    } catch {
+      if (isCapacitorNative()) {
+        throw new Error(
+          'Cannot reach the FabriSense backend on this phone. Start the backend on your computer and run "adb reverse tcp:5000 tcp:5000" while the phone is connected by USB.',
+        );
+      }
+      throw new Error(`Cannot reach the FabriSense backend at ${url}. Check that it is running.`);
+    }
 
     if (!res.ok) {
       const errorData = await res.json().catch(() => ({}));

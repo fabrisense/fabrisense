@@ -73,6 +73,8 @@ export function InspectionResultFlow({
   capturedImage,
   resultType = 'defects_found',   // 'defects_found' | 'no_defects' | 'invalid_image'
   defectData = null,
+  analysisError = '',
+  onChooseImage,
   onSaveBatch,
   onBackToHome,
   onRescan,
@@ -293,8 +295,73 @@ export function InspectionResultFlow({
     }
   };
 
+  if (resultType === 'invalid_image') {
+    return (
+      <div style={{ ...flowContainerStyle, minHeight: '100%' }}>
+        <div style={{ ...pageContentStyle, alignItems: 'center', textAlign: 'center' }}>
+          <div style={topHeaderStyle}>
+            <button onClick={onRescan} style={backIconBtnStyle} title="Back to inspection options">
+              <ArrowLeft size={20} color="#0f172a" />
+            </button>
+            <h2 style={pageTitleStyle}>Analysis Failed</h2>
+            <div style={{ width: '36px' }} />
+          </div>
+
+          <ImageOff size={48} color="#ef4444" style={{ margin: '48px 0 16px' }} />
+          <h3 style={{ margin: '0 0 8px', color: '#0f172a', fontSize: '20px' }}>
+            Could not analyze this image
+          </h3>
+          <p role="alert" style={{ margin: '0 0 20px', color: '#475569', fontSize: '14px', lineHeight: 1.5 }}>
+            {analysisError || 'The image could not be analyzed. Check your connection and try again.'}
+          </p>
+          {capturedImage && (
+            <img
+              src={capturedImage}
+              alt="Image that could not be analyzed"
+              style={{ maxWidth: '100%', maxHeight: '260px', objectFit: 'contain', borderRadius: '12px' }}
+            />
+          )}
+          <p style={{ color: '#64748b', fontSize: '12px', lineHeight: 1.5 }}>
+            For a USB-connected Android phone, keep the backend running on your computer and run
+            {' '}<code>adb reverse tcp:5000 tcp:5000</code>. Real defect detection also requires the
+            trained YOLO service to be running with <code>AI_MODE=yolo</code>.
+          </p>
+          <div style={{ width: '100%', marginTop: 'auto', paddingTop: '20px', display: 'flex', flexDirection: 'column', gap: '10px' }}>
+            <button
+              type="button"
+              onClick={onChooseImage}
+              style={primaryGreenBtnStyle}
+            >
+              Choose another image
+            </button>
+            <button type="button" onClick={onRescan} style={secondaryWhiteBtnStyle}>
+              Back to inspection options
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div style={flowContainerStyle}>
+      {activeDefectData.aiMode === 'mock' && (
+        <div
+          role="status"
+          style={{
+            marginBottom: '12px',
+            padding: '10px 12px',
+            color: '#92400e',
+            backgroundColor: '#fffbeb',
+            border: '1px solid #fde68a',
+            borderRadius: '10px',
+            fontSize: '12px',
+            lineHeight: 1.5,
+          }}
+        >
+          Demo mode: these detections are simulated. Configure the backend with <code>AI_MODE=yolo</code> and run the trained YOLO service for image-based results.
+        </div>
+      )}
 
       {/* ═══════════════════════════════════════════════════════════════════
           RESULT: NO DEFECTS DETECTED  (Scan Completed — left mockup)
@@ -356,17 +423,17 @@ export function InspectionResultFlow({
                 if (onSaveBatch) {
                   onSaveBatch({
                     id: `INS-${new Date().getFullYear()}-${Math.floor(1000 + Math.random() * 9000)}`,
-                    title: 'Pure Silk Sample',
-                    fabricType: 'Pure Silk Weave',
-                    time: 'Today • No defects',
-                    grade: 'GRADE A',
+                    title: activeDefectData.fabricType,
+                    fabricType: activeDefectData.fabricType,
+                    time: `Today • ${activeDefectData.totalDefects} defects`,
+                    grade: activeDefectData.grade,
                     defects: 0,
                     defectsList: [],
-                    aiExplanation: 'Fabric surface inspected under multi-spectrum lighting. Warp and weft threads exhibit zero flaws, uniform tension, and zero blemishes.',
-                    gradeExplanation: 'Fabric passed zero-defect benchmark with exceptional weave integrity.',
-                    severityScale: 'None',
-                    mainIssues: 'None detected',
-                    recommendedAction: 'Batch approved for production & premium export certification.',
+                    aiExplanation: activeDefectData.aiExplanation,
+                    gradeExplanation: activeDefectData.gradeExplanation,
+                    severityScale: activeDefectData.severityScale,
+                    mainIssues: activeDefectData.mainIssues,
+                    recommendedAction: activeDefectData.recommendedAction,
                     imagePath: activeDefectData.imagePath || capturedImage || defaultFabricImage,
                     image: capturedImage || defaultFabricImage,
                     type: 'clean',
@@ -447,7 +514,7 @@ export function InspectionResultFlow({
           RESULT: DEFECTS FOUND — existing 4-page detection flow
       ═══════════════════════════════════════════════════════════════════ */}
       {resultType === 'defects_found' && (<>
-      {currentStep === 1 && (
+      {currentStep === 1 && resultType === 'defects_found' && (
         <div style={pageContentStyle}>
           {/* Header */}
           <div style={topHeaderStyle}>
@@ -492,7 +559,7 @@ export function InspectionResultFlow({
       {/* ═══════════════════════════════════════════════════════════════════
           PAGE 2: DEFECT DETAILS (Classify Different Types)
       ═══════════════════════════════════════════════════════════════════ */}
-      {currentStep === 2 && (
+      {currentStep === 2 && resultType === 'defects_found' && (
         <div style={pageContentStyle}>
           {/* Header */}
           <div style={topHeaderStyle}>
@@ -585,7 +652,7 @@ export function InspectionResultFlow({
       {/* ═══════════════════════════════════════════════════════════════════
           PAGE 3: OVERALL FABRIC QUALITY (Grade B)
       ═══════════════════════════════════════════════════════════════════ */}
-      {currentStep === 3 && (
+      {currentStep === 3 && resultType === 'defects_found' && (
         <div style={pageContentStyle}>
           {/* Header */}
           <div style={topHeaderStyle}>
@@ -675,7 +742,7 @@ export function InspectionResultFlow({
       {/* ═══════════════════════════════════════════════════════════════════
           PAGE 4: INSPECTION REPORT (Summary, Save, Share, PDF)
       ═══════════════════════════════════════════════════════════════════ */}
-      {currentStep === 4 && (
+      {currentStep === 4 && resultType === 'defects_found' && (
         <div style={pageContentStyle}>
           {/* Header */}
           <div style={topHeaderStyle}>

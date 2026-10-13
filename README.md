@@ -417,18 +417,30 @@ The test suite validates:
 
 ## 📱 Mobile App (Android Build)
 
-The mobile inspection workflow is powered by Capacitor and continues to function without interruption:
+The mobile inspection workflow is powered by Capacitor. On a USB-connected Android
+device, `adb reverse` forwards the app's backend requests from the phone to the
+computer running FabriSense:
 
 ```bash
-# 1. Compile web bundle
-npm run build
+# Start the backend on the computer (port 5000), then forward its port to the phone
+adb reverse tcp:5000 tcp:5000
 
-# 2. Sync to native Android shell
+# For trained-model detections, set AI_MODE=yolo and
+# YOLO_API_URL=http://localhost:8000/predict in backend/.env, then start YOLO:
+.\yolo-service\.venv\Scripts\python.exe -m uvicorn app:app --app-dir yolo-service --host 0.0.0.0 --port 8000
+
+# Build with Android-specific frontend environment settings, then sync the native app
+npm run build --prefix frontend -- --mode android
 npx cap sync android
 
-# 3. Open in Android Studio or run directly
+# Install/run on the connected device
 npx cap run android
 ```
+
+The Android app uses `http://localhost:5000` by default for its backend connection.
+Set `VITE_API_BASE_URL` in `frontend/.env.android` only when the backend is hosted at
+a different address. The `Upload Image` option opens the phone's image picker; images
+are sent to the same analysis endpoint as camera captures.
 
 ---
 

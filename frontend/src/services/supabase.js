@@ -78,8 +78,12 @@ export function getSupabase() {
 function requireSupabase() {
   const supabase = getSupabase();
   if (!supabase) {
+    const envFile = import.meta.env.MODE === 'android' ? 'frontend/.env.android' : 'frontend/.env';
+    const nextStep = import.meta.env.MODE === 'android'
+      ? 'then rebuild and reinstall the Android app'
+      : 'then restart the dev server';
     throw new Error(
-      'Supabase is not configured. Set VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY in frontend/.env, then restart the dev server.',
+      `Supabase is not configured. Set VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY in ${envFile}, ${nextStep}.`,
     );
   }
   return supabase;
